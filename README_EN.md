@@ -29,7 +29,7 @@ Narrow with `CB_GATEWAY_PROVIDERS=workbuddy` if you only want one.
 
 ## Before you start
 
-1. **An empty Accounts page after startup is expected.** 2.0 does not import on boot. Pick a channel → Detect → Import. All four channels are in the dropdown.
+1. **An empty Accounts page after startup is expected.** 2.0 does not import on boot. For WorkBuddy, use **Browser login** and sign in on the official page. You can also pick a channel → Detect → Import. **Keep alive** refreshes saved logins and claims today's points. Scheduled keepalive and check-in live in Settings and stay off until you turn them on and save.
 2. **One API key is one channel.** Create the key with a channel selected. A WorkBuddy key uses `auto` / `glm-5.2`; a QwenWork key uses `auto` or `qwork-advanced`; a TraeWork key uses `auto` or `qwen-3.7-plus`. Mismatched model/key returns 400 or 403 — there is no cross-vendor failover.
 3. **HTTP 503 `channel_unavailable`** means that channel has no imported account.
 4. **Run QClaw / QwenWork with `python server.py` on Windows.** A Linux Docker container cannot decrypt those DPAPI files; the UI says so. WorkBuddy can stay on Docker.

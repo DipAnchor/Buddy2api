@@ -23,11 +23,12 @@ import tempfile
 import time
 import threading
 import webbrowser
+from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse, HTMLResponse
 from starlette.concurrency import run_in_threadpool
@@ -73,7 +74,16 @@ def _cors_origins() -> list[str]:
     return [origin.strip() for origin in value.split(",") if origin.strip()]
 
 
-app = FastAPI(title="Buddy 2 API", version=VERSION)
+@asynccontextmanager
+async def _lifespan(_app):
+    control_plane.start_keepalive()
+    try:
+        yield
+    finally:
+        await control_plane.stop_keepalive()
+
+
+app = FastAPI(title="Buddy 2 API", version=VERSION, lifespan=_lifespan)
 _CORS_ORIGINS = _cors_origins()
 
 app.add_middleware(
@@ -697,6 +707,49 @@ async def admin_qclaw_login_complete(
     return {"id": result["id"], "status": "ok", "updated": result["updated"], "provider": "qclaw"}
 
 
+def _workbuddy_provider():
+    provider = providers.get_provider("workbuddy")
+    if provider is None:
+        raise HTTPException(status_code=400, detail="Channel 'workbuddy' is not enabled")
+    return provider
+
+
+@app.post("/admin/workbuddy/login/start")
+async def admin_workbuddy_login_start(
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    _check_admin(authorization)
+    provider = _workbuddy_provider()
+    data = await _read_json_object(request, allow_empty=True)
+    realm = str((data or {}).get("realm") or "cn").strip().lower()
+    if realm not in {"cn", "global"}:
+        raise HTTPException(status_code=400, detail="realm must be cn or global")
+    try:
+        return await provider.start_login(realm)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:180]) from exc
+
+
+@app.get("/admin/workbuddy/login/poll")
+async def admin_workbuddy_login_poll(
+    response: Response,
+    state: str = "",
+    authorization: str | None = Header(default=None),
+):
+    _check_admin(authorization)
+    response.headers["Cache-Control"] = "no-store"
+    provider = _workbuddy_provider()
+    if not str(state or "").strip():
+        raise HTTPException(status_code=400, detail="state is required")
+    try:
+        return await provider.poll_login(state)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail="登录已超时，请重新开始") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)[:180]) from exc
+
+
 @app.put("/admin/accounts/{aid}")
 async def admin_update_account(
     aid: int,
@@ -745,21 +798,9 @@ async def admin_refresh_account(
     account = db.get_account(aid)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
-    channel = str(account.get("provider") or "workbuddy")
-    if channel != "workbuddy":
-        provider = providers.get_provider(channel)
-        if provider is None:
-            raise HTTPException(status_code=400, detail=f"Channel '{channel}' is not enabled")
-        refresh = getattr(provider, "refresh", None)
-        if refresh is None:
-            raise HTTPException(status_code=400, detail=f"Channel '{channel}' does not support refresh")
-        try:
-            await refresh(account)
-        except Exception as exc:
-            raise HTTPException(status_code=400, detail=str(exc)[:240]) from exc
-        return {"status": "ok"}
-    ok = await auth_manager.refresh_token(account)
-    return {"status": "ok" if ok else "failed"}
+    result = await control_plane.refresh_one(account)
+    result["status"] = "ok" if result.get("ok") else "failed"
+    return result
 
 
 @app.post("/admin/accounts/{aid}/test")
@@ -884,6 +925,21 @@ async def admin_claim_all_checkin(
     ):
         raise HTTPException(status_code=400, detail="channels must be an array of strings")
     return await control_plane.checkin_all(channels)
+
+
+@app.post("/admin/accounts/keepalive-all")
+async def admin_keepalive_all(
+    request: Request,
+    authorization: str | None = Header(default=None),
+):
+    _check_admin(authorization)
+    data = await _read_json_object(request, allow_empty=True)
+    channels = data.get("channels") if isinstance(data, dict) else None
+    if channels is not None and (
+        not isinstance(channels, list) or not all(isinstance(item, str) for item in channels)
+    ):
+        raise HTTPException(status_code=400, detail="channels must be an array of strings")
+    return await control_plane.keepalive_all(channels, source="manual", claim=True)
 
 
 # --- API Keys ---
@@ -1035,10 +1091,31 @@ async def admin_update_settings(
 ):
     _check_admin(authorization)
     data = await _read_json_object(request)
-    allowed_settings = {"backend_url", "default_domain", "timeout"}
+    allowed_settings = {
+        "backend_url",
+        "default_domain",
+        "timeout",
+        "keepalive_enabled",
+        "keepalive_hour",
+        "auto_checkin_enabled",
+        "auto_checkin_hour",
+    }
     unknown = set(data) - allowed_settings
     if unknown:
         raise HTTPException(status_code=400, detail=f"Unsupported settings: {', '.join(sorted(unknown))}")
+    for flag in ("keepalive_enabled", "auto_checkin_enabled"):
+        if flag in data:
+            data[flag] = control_plane.as_bool(data[flag], False)
+    for hour_key in ("keepalive_hour", "auto_checkin_hour"):
+        if hour_key not in data:
+            continue
+        try:
+            hour = int(data[hour_key])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{hour_key} must be an integer between 0 and 23")
+        if not 0 <= hour <= 23:
+            raise HTTPException(status_code=400, detail=f"{hour_key} must be an integer between 0 and 23")
+        data[hour_key] = hour
     if "timeout" in data:
         try:
             data["timeout"] = max(5, min(600, int(data["timeout"])))
@@ -1422,6 +1499,13 @@ def main():
     sys.stderr.write(f"  通道: {', '.join(providers.enabled_provider_ids())}\n")
     sys.stderr.write(
         f"  启动导入: {'on' if control_plane.auto_import_enabled() else 'off (CB_GATEWAY_AUTO_IMPORT=1 可打开)'}\n"
+    )
+    sys.stderr.write(
+        "  自动化: "
+        f"保活 {'on' if control_plane.keepalive_enabled() else 'off'}"
+        f" @{control_plane.keepalive_hour():02d}:00 · "
+        f"领取 {'on' if control_plane.auto_checkin_enabled() else 'off'}"
+        f" @{control_plane.auto_checkin_hour():02d}:00\n"
     )
     sys.stderr.write(f"  Admin: {'local automatic access' if LOCAL_MODE else 'token required'}\n")
     if ADMIN_TOKEN:
