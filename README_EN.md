@@ -4,7 +4,7 @@
 
 > Local consumer AI clients → one OpenAI-compatible API for Codex, OpenCode, Cherry Studio, NextChat, and similar agents. Work Buddy / CodeBuddy, QClaw, QwenWork, and TraeWork are on by default; pick one in the UI dropdown. Each request stays on one channel.
 
-Release **2.1.17**. Local use only. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
+Release **2.1.18**. Local use only. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
 
 Default loopback startup opens the management page without an Admin Token. Restarting does not invalidate local access. Repeated startup opens the existing instance; a database can only be used by one process. Use `--no-browser` for background services. Setting `--admin-token` or `CB_GATEWAY_ADMIN_TOKEN` enables explicit token authentication and is required for non-loopback listeners. Enter that token in the management settings. Client API keys and upstream account credentials are unchanged.
 
@@ -29,7 +29,7 @@ Narrow with `CB_GATEWAY_PROVIDERS=workbuddy` if you only want one.
 
 ## Before you start
 
-1. **An empty Accounts page after startup is expected.** 2.0 does not import on boot. Pick a channel → Detect → Import. All four channels are in the dropdown.
+1. **An empty Accounts page after startup is expected.** 2.0 does not import on boot. For WorkBuddy, use **Browser login** and sign in on the official page. You can also pick a channel → Detect → Import. **Keep alive** refreshes saved logins and claims today's points. Scheduled keepalive and check-in live in Settings and stay off until you turn them on and save.
 2. **One API key is one channel.** Create the key with a channel selected. A WorkBuddy key uses `auto` / `glm-5.2`; a QwenWork key uses `auto` or `qwork-advanced`; a TraeWork key uses `auto` or `qwen-3.7-plus`. Mismatched model/key returns 400 or 403 — there is no cross-vendor failover.
 3. **HTTP 503 `channel_unavailable`** means that channel has no imported account.
 4. **Run QClaw / QwenWork with `python server.py` on Windows.** A Linux Docker container cannot decrypt those DPAPI files; the UI says so. WorkBuddy can stay on Docker.
