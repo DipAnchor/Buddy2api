@@ -105,7 +105,7 @@ ADMIN_TOKEN: str = ""
 ALLOW_NO_ADMIN_AUTH = False
 LOCAL_MODE = False
 ALLOW_UNAUTHENTICATED_API = _env_flag("CB_GATEWAY_ALLOW_UNAUTHENTICATED_API", False)
-MAX_BODY_BYTES = max(1024, _env_int("CB_GATEWAY_MAX_BODY_BYTES", 10 * 1024 * 1024))
+MAX_BODY_BYTES = max(1024, _env_int("CB_GATEWAY_MAX_BODY_BYTES", 32 * 1024 * 1024))
 _CURRENT_REQUEST: contextvars.ContextVar[Request | None] = contextvars.ContextVar("current_request", default=None)
 
 
@@ -496,7 +496,9 @@ async def admin_channels(authorization: str | None = Header(default=None)):
             "loaded": provider is not None,
             "checkin_supported": bool(getattr(provider, "checkin_supported", False)),
             "env_locked": env_set,
-            "host_auth_limited": bool(in_container and channel in {"qclaw", "qwenwork"}),
+            "host_auth_limited": bool(
+                in_container and channel in {"qclaw", "qwenwork", "loomy", "xiaohuanxiong"}
+            ),
         })
     return {"channels": items, "known": list(KNOWN_CHANNEL_SET)}
 
@@ -1099,6 +1101,7 @@ async def admin_update_settings(
         "keepalive_hour",
         "auto_checkin_enabled",
         "auto_checkin_hour",
+        "loomy_context_budget",
     }
     unknown = set(data) - allowed_settings
     if unknown:
@@ -1116,6 +1119,14 @@ async def admin_update_settings(
         if not 0 <= hour <= 23:
             raise HTTPException(status_code=400, detail=f"{hour_key} must be an integer between 0 and 23")
         data[hour_key] = hour
+    if "loomy_context_budget" in data:
+        try:
+            budget = int(data["loomy_context_budget"])
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="loomy_context_budget must be an integer")
+        if budget < 0 or budget > 2_000_000:
+            raise HTTPException(status_code=400, detail="loomy_context_budget must be between 0 and 2000000")
+        data["loomy_context_budget"] = budget
     if "timeout" in data:
         try:
             data["timeout"] = max(5, min(600, int(data["timeout"])))

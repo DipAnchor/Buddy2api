@@ -378,7 +378,9 @@ async def _chat_after_bind_no_echo(
     info = dict(api_key_info or {})
     info["_log_model"] = bound.original
     info["_bind_channel"] = bound.channel
-    return await provider.chat_completions(dispatch, info)
+    from context_budget import dispatch_with_context_policy
+
+    return await dispatch_with_context_policy(provider, bound.channel, dispatch, info)
 
 
 async def responses_after_bind(

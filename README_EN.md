@@ -2,9 +2,9 @@
 
 [English](README_EN.md) | [中文](README.md)
 
-> Local consumer AI clients → one OpenAI-compatible API for Codex, OpenCode, Cherry Studio, NextChat, and similar agents. Work Buddy / CodeBuddy, QClaw, QwenWork, and TraeWork are on by default; pick one in the UI dropdown. Each request stays on one channel.
+> Local consumer AI clients → one OpenAI-compatible API for Codex, OpenCode, Cherry Studio, NextChat, and similar agents. Work Buddy / CodeBuddy, QClaw, QwenWork, TraeWork, iFlytek Loomy, and SenseTime Xiaohuanxiong are on by default; pick one in the UI dropdown. Each request stays on one channel.
 
-Release **2.1.18**. Local use only, and only with accounts you personally own. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
+Release **2.2.0**. Local use only, and only with accounts you personally own. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
 
 **Your own accounts only. Do not use SMS-code platforms, bulk registration, or any batch method to farm credits.** Do not expose the gateway to other people, claim rewards for them, or resell quota.
 
@@ -14,7 +14,9 @@ Default loopback startup opens the management page without an Admin Token. Resta
 
 Buddy2api listens on `http://127.0.0.1:8787/v1`. You stay signed into the official apps; this gateway imports those sessions and forwards chat. Typical clients use Chat Completions. Codex uses `/v1/responses`; create the key as type Codex in the UI to enable Codex prompt sanitization.
 
-All four channels are on by default. A channel with no local login shows empty on Accounts; nothing is imported until you click Import.
+All six channels are on by default. A channel with no local login shows empty on Accounts; nothing is imported until you click Import.
+
+Loomy reads a local `auth-session.json`. Its daily balance is granted upstream; one-click claim only reads that balance. Long Loomy chats are trimmed to a 160k-token budget before send. Xiaohuanxiong reads a local `auth.json`, and one-click claim triggers the daily grant. Neither channel uses the WorkBuddy CLI header set.
 
 ```powershell
 python server.py
@@ -26,6 +28,8 @@ python server.py
 | QClaw | on | `%APPDATA%\QClaw` |
 | QwenWork | on | `%APPDATA%\QwenWorkCN` |
 | TraeWork | on | `%APPDATA%\TRAE SOLO CN\User\globalStorage` |
+| iFlytek Loomy | on | `%PUBLIC%\Loomy\*\userData\auth-session.json` |
+| SenseTime Xiaohuanxiong | on | `%USERPROFILE%\.box-agent\config\auth.json` |
 
 Narrow with `CB_GATEWAY_PROVIDERS=workbuddy` if you only want one.
 
@@ -84,7 +88,7 @@ The database migrates on startup. Existing keys stay on `workbuddy`. Startup no 
 |---|---|
 | Base URL | `http://127.0.0.1:8787/v1` |
 | API Key | Created in the UI, bound to one channel |
-| Model | WorkBuddy `auto`; QClaw `auto`; QwenWork `qwork-advanced` |
+| Model | WorkBuddy, QClaw, Loomy, and Xiaohuanxiong use `auto`; QwenWork uses `auto` or `qwork-advanced`; TraeWork uses `auto` or `qwen-3.7-plus` |
 
 Unprefixed `auto` follows the key’s channel. Use a separate key per channel. On the Models page, “一键读取供应模型” refreshes each channel’s supplier list separately; a TraeWork-only id such as Doubao is never merged into WorkBuddy.
 
@@ -118,7 +122,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
 
 ## Environment
 
-`CB_GATEWAY_PROVIDERS` (default `workbuddy,qclaw,qwenwork,traework`), `CB_GATEWAY_AUTO_IMPORT` (default `0`), `CB_AUTH_DIR` / `CB_QCLAW_AUTH_DIR` / `CB_QWENWORK_AUTH_DIR` / `CB_TRAEWORK_AUTH_DIR`, `CB_GATEWAY_ADMIN_TOKEN`, `CB_GATEWAY_MASTER_KEY`.
+`CB_GATEWAY_PROVIDERS` (default `workbuddy,qclaw,qwenwork,traework,loomy,xiaohuanxiong`), `CB_GATEWAY_AUTO_IMPORT` (default `0`), `CB_AUTH_DIR` / `CB_QCLAW_AUTH_DIR` / `CB_QWENWORK_AUTH_DIR` / `CB_TRAEWORK_AUTH_DIR` / `CB_LOOMY_AUTH_DIR` / `CB_XHX_AUTH_DIR`, `CB_GATEWAY_ADMIN_TOKEN`, `CB_GATEWAY_MASTER_KEY`.
 
 `CB_GATEWAY_DEFAULT_REASONING_EFFORT` controls the default reasoning effort for WorkBuddy DeepSeek V4 Pro/Flash. It accepts `low`, `high`, or `max`, defaults to `high`, and can be disabled with `off`. A Responses `reasoning.effort` or Chat Completions `reasoning_effort` value overrides the default.
 
