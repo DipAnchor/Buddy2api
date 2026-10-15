@@ -65,7 +65,14 @@ def test_qclaw_quota_uses_token_unit(qclaw_enabled, monkeypatch):
 
 def test_qclaw_in_default_registry(monkeypatch):
     monkeypatch.delenv("CB_GATEWAY_PROVIDERS", raising=False)
-    assert providers.enabled_provider_ids() == ["workbuddy", "qclaw", "qwenwork", "traework"]
+    assert providers.enabled_provider_ids() == [
+        "workbuddy",
+        "qclaw",
+        "qwenwork",
+        "traework",
+        "loomy",
+        "xiaohuanxiong",
+    ]
     assert providers.get_provider("qclaw") is not None
     assert "qclaw" in providers._LOADED
 

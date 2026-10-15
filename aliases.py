@@ -34,6 +34,14 @@ def _builtin_aliases(channel: str) -> dict[str, str]:
         from providers.traework.constants import ALIASES
 
         return dict(ALIASES)
+    if channel == "loomy":
+        from providers.loomy.constants import ALIASES
+
+        return dict(ALIASES)
+    if channel == "xiaohuanxiong":
+        from providers.xiaohuanxiong.constants import ALIASES
+
+        return dict(ALIASES)
     return {}
 
 

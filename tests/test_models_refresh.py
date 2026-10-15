@@ -398,7 +398,7 @@ def test_web_and_cli_version_come_from_version_py():
     assert "__APP_VERSION__" in html
     assert "v2.1." not in html
     rendered = server._render_index_html()
-    assert f"Local model gateway · v{VERSION}" in rendered
+    assert f"wicm84266964 · v{VERSION}" in rendered
     assert "__APP_VERSION__" not in rendered
     assert f"Buddy 2 API v{{VERSION}}" in Path(server.__file__).read_text(encoding="utf-8")
 

@@ -1,4 +1,4 @@
-"""Channel registry. WorkBuddy, QClaw, QwenWork, and TraeWork are enabled by default."""
+"""Channel registry. WorkBuddy, QClaw, QwenWork, TraeWork, Loomy, and Xiaohuanxiong are enabled by default."""
 
 from __future__ import annotations
 
@@ -10,18 +10,29 @@ from providers.protocol import (
     ChannelId,
     Provider,
 )
+from providers.loomy import PROVIDER as LOOMY_PROVIDER
 from providers.qclaw import PROVIDER as QCLAW_PROVIDER
 from providers.qwenwork import PROVIDER as QWENWORK_PROVIDER
 from providers.traework import PROVIDER as TRAEWORK_PROVIDER
 from providers.workbuddy import PROVIDER as WORKBUDDY_PROVIDER
+from providers.xiaohuanxiong import PROVIDER as XIAOHUANXIONG_PROVIDER
 
-DEFAULT_PROVIDER_IDS: tuple[str, ...] = ("workbuddy", "qclaw", "qwenwork", "traework")
+DEFAULT_PROVIDER_IDS: tuple[str, ...] = (
+    "workbuddy",
+    "qclaw",
+    "qwenwork",
+    "traework",
+    "loomy",
+    "xiaohuanxiong",
+)
 
 _LOADED: dict[str, Provider] = {
     "workbuddy": WORKBUDDY_PROVIDER,
     "qclaw": QCLAW_PROVIDER,
     "qwenwork": QWENWORK_PROVIDER,
     "traework": TRAEWORK_PROVIDER,
+    "loomy": LOOMY_PROVIDER,
+    "xiaohuanxiong": XIAOHUANXIONG_PROVIDER,
 }
 
 

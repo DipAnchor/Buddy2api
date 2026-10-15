@@ -268,11 +268,25 @@ async def _fetch_workbuddy(account: dict) -> list[dict]:
     return await fetch_supplier_models(account)
 
 
+async def _fetch_loomy(account: dict) -> list[dict]:
+    from providers.loomy.models import fetch_supplier_models
+
+    return await fetch_supplier_models(account)
+
+
+async def _fetch_xiaohuanxiong(account: dict) -> list[dict]:
+    from providers.xiaohuanxiong.models import fetch_supplier_models
+
+    return await fetch_supplier_models(account)
+
+
 LIVE_FETCHERS: dict[str, Fetcher] = {
     "qclaw": _fetch_qclaw,
     "traework": _fetch_traework,
     "qwenwork": _fetch_qwenwork,
     "workbuddy": _fetch_workbuddy,
+    "loomy": _fetch_loomy,
+    "xiaohuanxiong": _fetch_xiaohuanxiong,
 }
 
 
