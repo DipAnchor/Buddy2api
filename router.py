@@ -54,6 +54,8 @@ def bind(payload: dict, api_key_info: dict | None) -> BindResult:
         inner = rest
         if not inner:
             raise InvalidModel(original, f"model '{original}' is missing the inner id")
+        if providers.is_retired_channel(channel):
+            raise UnknownChannel(channel, providers.retired_message(channel))
         if not providers.is_channel_enabled(channel) or providers.get_provider(channel) is None:
             raise UnknownChannel(channel)
         provider = providers.get_provider(channel)
@@ -65,6 +67,8 @@ def bind(payload: dict, api_key_info: dict | None) -> BindResult:
 
     # Unprefixed: skip step 2, bind key.default_channel
     channel = key_channel
+    if providers.is_retired_channel(channel):
+        raise UnknownChannel(channel, providers.retired_message(channel))
     if not providers.is_channel_enabled(channel) or providers.get_provider(channel) is None:
         raise UnknownChannel(channel)
     provider = providers.get_provider(channel)
@@ -133,6 +137,18 @@ def bind_http(payload: dict, api_key_info: dict | None) -> BindResult:
 
 
 async def ensure_usable(channel: str) -> None:
+    if providers.is_retired_channel(channel):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": {
+                    "message": providers.retired_message(channel),
+                    "type": "unknown_channel",
+                    "code": "channel_retired",
+                    "channel": channel,
+                }
+            },
+        )
     provider = providers.get_provider(channel)
     if provider is None:
         raise HTTPException(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import httpx
 
+import database as db
 from providers.loomy.constants import CHANNEL_ID, MODEL_BASE
 from providers.loomy.headers import model_headers
 from providers.loomy.token import LoomyAuthError, refresh_account
@@ -111,25 +112,74 @@ async def fetch_quota(account: dict) -> QuotaSnapshot:
     )
 
 
-async def fetch_checkin(account: dict, force: bool = False) -> dict:
-    del force
+def _remember_claimed(account: dict, result: dict) -> dict:
+    account_id = account.get("id")
+    if account_id and result.get("ok") and (result.get("already_claimed") or result.get("today_checked_in")):
+        db.upsert_account_checkin_cache(int(account_id), result)
+    return result
+
+
+def _cached_claimed(account: dict, message: str) -> dict | None:
+    """Keep today's confirmed balance when a later status read flakes."""
+    account_id = account.get("id")
+    if not account_id:
+        return None
+    cached = db.get_account_checkin_cache(int(account_id))
+    if not isinstance(cached, dict) or not cached.get("ok"):
+        return None
+    if not (cached.get("already_claimed") or cached.get("today_checked_in") or cached.get("claimed")):
+        return None
+    cached["stale"] = True
+    cached["ok"] = True
+    cached["already_claimed"] = True
+    cached["today_checked_in"] = True
+    if message:
+        cached["message"] = message[:240]
+    return cached
+
+
+async def _read_points(account: dict) -> tuple[int, dict, str]:
     try:
         status, payload = await _points(account)
     except Exception as exc:
-        return _row(account, ok=False, message=str(exc)[:240])
+        return 0, {}, str(exc)[:240]
+    return status, payload, ""
+
+
+async def fetch_checkin(account: dict, force: bool = False) -> dict:
+    del force
+    current = account
+    status, payload, error = await _read_points(current)
+    if error or status in {401, 403} or not str(current.get("access_token") or ""):
+        try:
+            current = await refresh_account(current)
+            status, payload, error = await _read_points(current)
+        except LoomyAuthError as exc:
+            error = error or str(exc)[:240]
+    if error:
+        return _cached_claimed(account, error) or _row(account, ok=False, message=error)
     if status >= 400:
-        return _row(account, ok=False, status_code=status, message=f"Loomy points HTTP {status}")
+        message = f"Loomy points HTTP {status}"
+        return _cached_claimed(account, message) or _row(
+            account, ok=False, status_code=status, message=message
+        )
     parsed = parse_quota(payload)
     daily = parsed["daily_balance"]
     if daily is None:
+        cached = _cached_claimed(account, "上游未返回每日额度")
+        if cached:
+            return cached
         return _row(account, ok=True, status_code=status, message="上游未返回每日额度")
-    return _row(
-        account,
-        ok=True,
-        status_code=status,
-        already_claimed=True,
-        credit=daily,
-        message=f"每日额度已在账，剩余 {daily:g}",
+    return _remember_claimed(
+        current,
+        _row(
+            current,
+            ok=True,
+            status_code=status,
+            already_claimed=True,
+            credit=daily,
+            message=f"每日额度已在账，剩余 {daily:g}",
+        ),
     )
 
 
@@ -137,5 +187,8 @@ async def claim_checkin(account: dict) -> dict:
     try:
         account = await refresh_account(account)
     except LoomyAuthError as exc:
+        cached = _cached_claimed(account, str(exc)[:240])
+        if cached:
+            return cached
         return _row(account, ok=False, message=str(exc)[:240])
     return await fetch_checkin(account, force=True)

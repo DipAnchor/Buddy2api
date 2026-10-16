@@ -25,6 +25,12 @@ KNOWN_CHANNEL_IDS: tuple[ChannelId, ...] = (
     "xiaohuanxiong",
 )
 KNOWN_CHANNEL_SET = frozenset(KNOWN_CHANNEL_IDS)
+# QClaw stopped operating. Credits moved to WorkBuddy. Kept as a known id so
+# old env lists and stored keys fail with a retired message instead of a crash.
+RETIRED_CHANNEL_IDS = frozenset({"qclaw"})
+RETIRED_CHANNEL_MESSAGE = (
+    "QClaw is retired. Credits moved to WorkBuddy; switch this API key to workbuddy."
+)
 
 
 class CheckinUnsupported(Exception):

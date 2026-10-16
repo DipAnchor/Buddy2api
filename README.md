@@ -2,9 +2,9 @@
 
 [English](README_EN.md) | 中文
 
-> 把本机已经登录的消费级 AI 客户端，接成 OpenAI 兼容接口，给 Codex、OpenCode、Cherry Studio、NextChat 等用。默认打开 Work Buddy / CodeBuddy、QClaw、千问办公（QwenWork）、TraeWork、讯飞 Loomy、商汤小浣熊六个通道；管理页下拉选其中一个。一次请求只走一个通道。
+> 把本机已经登录的消费级 AI 客户端，接成 OpenAI 兼容接口，给 Codex、OpenCode、Cherry Studio、NextChat 等用。默认打开 Work Buddy / CodeBuddy、千问办公（QwenWork）、TraeWork、讯飞 Loomy、商汤小浣熊五个通道；管理页下拉选其中一个。一次请求只走一个通道。QClaw 已停止运营，通道已下架，积分请改用 WorkBuddy。
 
-当前版本 **2.2.0**。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
+当前版本 **2.2.1**。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
 
 **仅限自己的账号。严禁使用接码平台、批量注册或任何批量方式薅羊毛。** 不要把网关公开给别人用，也不要代领或倒卖额度。
 
@@ -14,7 +14,7 @@
 
 Buddy2api 在本机提供 `http://127.0.0.1:8787/v1`。你在官方客户端里登录并且还有额度，这个网关把本机登录导入进来，把请求转到对应厂商。普通客户端走 Chat Completions；Codex 走 `/v1/responses`，管理页把 Key 类型选成 Codex 时会做一轮内容清洗。
 
-六个通道默认都开。没装、没登录的通道，账号页检测为空，不会自动入库。
+五个通道默认都开。没装、没登录的通道，账号页检测为空，不会自动入库。QClaw 已下架，环境变量里的 `qclaw` 会被忽略。
 
 讯飞 Loomy 读本机 `auth-session.json`。每日额度由上游自动发放，一键领取只核对到账余额；长对话发送前按 16 万 token 预算裁旧历史。商汤小浣熊读本机 `auth.json`，一键领取会触发每日发放。两家都用自己的请求头，不走 WorkBuddy 的 CLI 指纹。
 
@@ -25,22 +25,21 @@ python server.py
 | 通道 | 默认 | 本机登录位置 |
 |---|---|---|
 | WorkBuddy / CodeBuddy | 开 | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth` |
-| QClaw | 开 | `%APPDATA%\QClaw` |
 | 千问办公 QwenWork | 开 | `%APPDATA%\QwenWorkCN` |
 | TraeWork | 开 | `%APPDATA%\TRAE SOLO CN\User\globalStorage` |
 | 讯飞 Loomy | 开 | `%PUBLIC%\Loomy\*\userData\auth-session.json` |
 | 商汤小浣熊 | 开 | `%USERPROFILE%\.box-agent\config\auth.json` |
 
-路径不对时可用 `CB_AUTH_DIR`、`CB_QCLAW_AUTH_DIR`、`CB_QWENWORK_AUTH_DIR`、`CB_TRAEWORK_AUTH_DIR`、`CB_LOOMY_AUTH_DIR`、`CB_XHX_AUTH_DIR` 指定。各通道的登录文件不要混在同一个目录。只要其中一家时，可设 `CB_GATEWAY_PROVIDERS=workbuddy` 收窄。
+路径不对时可用 `CB_AUTH_DIR`、`CB_QWENWORK_AUTH_DIR`、`CB_TRAEWORK_AUTH_DIR`、`CB_LOOMY_AUTH_DIR`、`CB_XHX_AUTH_DIR` 指定。各通道的登录文件不要混在同一个目录。只要其中一家时，可设 `CB_GATEWAY_PROVIDERS=workbuddy` 收窄。
 
 ## 注意事项
 
 按下面「安装与启动」即可。这几条是 2.0 里最容易踩空的：
 
-1. **启动后账号页是空的，这是正常的。** 默认不再自动入库。到「账号」页：选通道 → 重新检测 → 一键导入。六个通道都能选。
+1. **启动后账号页是空的，这是正常的。** 默认不再自动入库。到「账号」页：选通道 → 重新检测 → 一键导入。五个通道都能选。
 2. **一把 API Key 只打一个通道。** 创建时必须选通道。WorkBuddy 的 Key 发 `auto` / `glm-5.2`；QwenWork 的 Key 发 `auto` 或 `qwork-advanced`；TraeWork 的 Key 发 `auto` 或 `qwen-3.7-plus`。通道和模型对不上会 400 或 403，不会帮你转到另一家。
 3. **某个通道返回 503 `channel_unavailable`：** 这个通道还没导入可用账号。
-4. **QClaw / QwenWork 请在 Windows 上直接跑 `python server.py`。** Linux Docker 读不了这两家用 DPAPI 加密的本机文件；管理页会写明这一点。WorkBuddy 可以继续用 Docker。
+4. **QwenWork 请在 Windows 上直接跑 `python server.py`。** Linux Docker 读不了它用 DPAPI 加密的本机文件；管理页会写明这一点。WorkBuddy 可以继续用 Docker。
 5. 本项目和聊天客户端最好在同一台电脑。客户端如果跑在 Docker 里，Base URL 填 `http://host.docker.internal:8787/v1`，不要填容器自己的 `127.0.0.1`。
 
 ## 安装与启动
@@ -101,7 +100,7 @@ python server.py
 ### 其他启动方式
 
 - **脚本：** Windows 安装 Python 时勾选 Add Python to PATH，在项目目录执行 `.\start.bat`。Linux / macOS：`chmod +x start.sh && ./start.sh`。脚本优先用名为 `buddy2api` 的 Conda 环境，没有 Conda 才建 `.venv`。
-- **Docker：** `powershell -ExecutionPolicy Bypass -File .\start-docker-win.ps1`。本机没有 WorkBuddy 登录目录时脚本仍会启动。容器里通道都在，但 QClaw、千问办公、Loomy、小浣熊的本机登录文件请用上面的 `python server.py` 导入。导入后库里的 token 可以继续给 Docker 用。
+- **Docker：** `powershell -ExecutionPolicy Bypass -File .\start-docker-win.ps1`。本机没有 WorkBuddy 登录目录时脚本仍会启动。容器里通道都在，但千问办公、Loomy、小浣熊的本机登录文件请用上面的 `python server.py` 导入。导入后库里的 token 可以继续给 Docker 用。
 
 ### 第一次打开网页之后
 
@@ -113,7 +112,7 @@ python server.py
 4. 在客户端里填：
    - Base URL：`http://127.0.0.1:8787/v1`
    - API Key：刚复制的 Key
-   - 模型：WorkBuddy、QClaw、Loomy、小浣熊用 `auto`；千问办公用 `auto` 或 `qwork-advanced`；TraeWork 用 `auto` 或 `qwen-3.7-plus`。上游加了新模型时，到「模型配置」点「一键读取供应模型」；各通道目录分开保存，选错通道仍会 400/403。Loomy 的每日额度由上游自动发放，一键领取会读到账余额。小浣熊的一键领取会触发每日发放。
+   - 模型：WorkBuddy、Loomy、小浣熊用 `auto`；千问办公用 `auto` 或 `qwork-advanced`；TraeWork 用 `auto` 或 `qwen-3.7-plus`。上游加了新模型时，到「模型配置」点「一键读取供应模型」；各通道目录分开保存，选错通道仍会 400/403。Loomy 的每日额度由上游自动发放，一键领取会读到账余额。小浣熊的一键领取会触发每日发放。
 
 管理页打不开或要远程访问时：
 
@@ -162,7 +161,7 @@ python server.py
 |---|---|
 | Base URL | `http://127.0.0.1:8787/v1` |
 | API Key | 管理页创建，已绑定通道 |
-| 模型 | WorkBuddy：`auto` / `glm-5.2`。QClaw：`auto` 或 `qclaw/default`。QwenWork：`auto` 或 `qwork-advanced`。TraeWork：`auto` 或 `qwen-3.7-plus` |
+| 模型 | WorkBuddy：`auto` / `glm-5.2`。QwenWork：`auto` 或 `qwork-advanced`。TraeWork：`auto` 或 `qwen-3.7-plus`。Loomy、小浣熊：`auto` |
 | Stream | 建议开 |
 
 接口：`/v1/chat/completions`、`/v1/responses`、`/v1/models`。没加前缀的 `auto` 走这把 Key 绑定的通道。Codex 用 Responses 接口；管理页选 Codex 类型的 Key 会按 Codex 特征 prompt 做清洗（其它客户端借用这把 Key、但没有 Codex 特征时不改写）。
@@ -188,7 +187,6 @@ python server.py
 | 通道 | 实际能力 |
 |---|---|
 | WorkBuddy | DeepSeek V4 Pro/Flash 支持 `low` / `high` / `max`，标准档位会投影到这三档；未指定时默认 `high`，可用 `CB_GATEWAY_DEFAULT_REASONING_EFFORT=off` 关闭默认 |
-| QClaw | 统一转换成 `reasoning_effort` 后透传；具体档位是否生效由所选上游模型决定，不额外注入默认值 |
 | QwenWork | 协议只有 `is_reasoning` 开关；`none` 关闭，其它显式档位开启，无法区分多档强度 |
 | TraeWork | 当前会话协议没有可验证的思考控制字段，因此暂不支持调档 |
 
@@ -225,7 +223,7 @@ curl http://127.0.0.1:8787/v1/chat/completions \
   -d '{"model":"auto","messages":[{"role":"user","content":"你好"}]}'
 ```
 
-QwenWork、QClaw、TraeWork、Loomy、小浣熊各用自己那把 Key，不要混用。
+QwenWork、TraeWork、Loomy、小浣熊各用自己那把 Key，不要混用。原来绑 QClaw 的 Key 要改到 WorkBuddy。
 
 ## 启动参数
 
@@ -241,7 +239,7 @@ QwenWork、QClaw、TraeWork、Loomy、小浣熊各用自己那把 Key，不要�
 
 | 变量 | 说明 |
 |---|---|
-| `CB_GATEWAY_PROVIDERS` | 启用哪些通道，逗号分隔。默认 `workbuddy,qclaw,qwenwork,traework,loomy,xiaohuanxiong`。只想留一家时再改 |
+| `CB_GATEWAY_PROVIDERS` | 启用哪些通道，逗号分隔。默认 `workbuddy,qwenwork,traework,loomy,xiaohuanxiong`。`qclaw` 已下架，写了也会忽略。只想留一家时再改 |
 | `CB_GATEWAY_AUTO_IMPORT` | 设 `1` 则启动时自动导入。默认 `0` |
 | `CB_GATEWAY_CHECKIN_GAP_MS` | 一键领取和一键保活的账号间隔，默认 `800` |
 | `CB_GATEWAY_KEEPALIVE` | 设 `1` 强制打开定时保活，设 `0` 强制关闭。不设时跟随设置页，默认关闭 |
@@ -250,7 +248,6 @@ QwenWork、QClaw、TraeWork、Loomy、小浣熊各用自己那把 Key，不要�
 | `CB_GATEWAY_AUTO_CHECKIN_HOUR` | 定时领取的本地小时，默认 `9` |
 | `CB_GATEWAY_DEFAULT_REASONING_EFFORT` | WorkBuddy DeepSeek V4 Pro/Flash 的默认思考强度，支持 `low` / `high` / `max`，默认 `high`；设为 `off` 可关闭默认值。Responses 的 `reasoning.effort` 或 Chat Completions 的 `reasoning_effort` 会覆盖它 |
 | `CB_AUTH_DIR` | WorkBuddy 登录目录 |
-| `CB_QCLAW_AUTH_DIR` | QClaw 登录目录 |
 | `CB_QWENWORK_AUTH_DIR` | QwenWork 登录目录 |
 | `CB_TRAEWORK_AUTH_DIR` | TraeWork `storage.json` 所在目录 |
 | `CB_LOOMY_AUTH_DIR` | Loomy 数据根目录，下面应有 `*/userData/auth-session.json` |

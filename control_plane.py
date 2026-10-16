@@ -191,6 +191,8 @@ def workbuddy_discover(auth_dir: str | None = None) -> dict:
 def discover(channel: str | None = None, auth_dir: str | None = None) -> dict:
     if not channel or channel == "workbuddy":
         return workbuddy_discover(auth_dir)
+    if providers.is_retired_channel(channel):
+        raise ValueError(providers.retired_message(channel))
     provider = providers.get_provider(channel)
     if provider is None:
         raise ValueError(f"Channel '{channel}' is not enabled")
@@ -267,6 +269,8 @@ def import_channel(channel: str, preview_token: str, paths: list[str] | None, au
         paths = list((preview.get("paths") or {}).values())
     if channel == "workbuddy":
         return import_workbuddy(paths, preview, auth_dir)
+    if providers.is_retired_channel(channel):
+        raise ValueError(providers.retired_message(channel))
     provider = providers.get_provider(channel)
     if provider is None:
         raise ValueError(f"Channel '{channel}' is not enabled")

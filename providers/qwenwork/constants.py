@@ -16,6 +16,15 @@ CHAT_PATH = "/algo/api/v2/service/pro/sse/agent_chat_generation"
 CHAT_QUERY = "FetchKeys=llm_model_result&AgentId=agent_common"
 REFRESH_PATH = "/api/v1/deviceToken/refresh"
 ACCOUNT_CONTEXT_PATH = "/api/v1/adapter/user/account-context"
+# Official 1.3.1 desktop daily grant notice. Same OpenAPI host as account-context.
+# The claim call must use the 1.3.1 client identity; the frozen 1.0.4 chat headers
+# are rejected by this route.
+DAILY_CREDIT_NOTICE_CLAIM_PATH = "/api/v1/adapter/user/daily-credit-notice/claim"
+CLAIM_IDE_VERSION = "1.3.1"
+CLAIM_RELEASE_VERSION = "1.3.1-26101419"
+CLAIM_BUILD = "26101419"
+CLAIM_APP_MODE = "standard"
+CLAIM_USER_AGENT = "QwenWork/1.3.1"
 MODELS_PATH = "/api/v2/model/list"
 
 IDE_VERSION = "1.0.4"

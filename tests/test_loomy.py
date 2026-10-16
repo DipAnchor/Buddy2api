@@ -80,6 +80,74 @@ def test_models_and_daily_balance_parse():
     assert quota["available"] == 5010
 
 
+def test_status_read_keeps_today_claim_when_upstream_flakes(isolated_db, monkeypatch):
+    from providers.loomy import quota
+
+    account_id = db.add_account(
+        {
+            "name": "loomy",
+            "uid": "u-flake",
+            "provider": "loomy",
+            "access_token": "sess",
+            "expires_at": 9_999_999_999_999,
+        }
+    )
+    account = db.get_account(account_id)
+    calls = {"n": 0}
+
+    async def fake_points(_account):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 200, {"data": {"balance": 1, "dailyBalance": 80, "availableBalance": 81}}
+        return 503, {}
+
+    monkeypatch.setattr(quota, "_points", fake_points)
+    first = asyncio.run(quota.fetch_checkin(account))
+    second = asyncio.run(quota.fetch_checkin(account))
+    assert first["ok"] is True
+    assert first["already_claimed"] is True
+    assert second["ok"] is True
+    assert second["already_claimed"] is True
+    assert second["stale"] is True
+    assert second["credit"] == 80
+    assert "HTTP 503" in second["message"]
+
+
+def test_status_read_refreshes_once_after_auth_failure(isolated_db, monkeypatch):
+    from providers.loomy import quota
+
+    account_id = db.add_account(
+        {
+            "name": "loomy",
+            "uid": "u-auth",
+            "provider": "loomy",
+            "access_token": "old",
+            "expires_at": 9_999_999_999_999,
+        }
+    )
+    account = db.get_account(account_id)
+    calls = {"n": 0, "refreshed": 0}
+
+    async def fake_points(row):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return 401, {}
+        assert row["access_token"] == "fresh"
+        return 200, {"data": {"dailyBalance": 40, "availableBalance": 40}}
+
+    async def fake_refresh(row):
+        calls["refreshed"] += 1
+        return {**row, "access_token": "fresh"}
+
+    monkeypatch.setattr(quota, "_points", fake_points)
+    monkeypatch.setattr(quota, "refresh_account", fake_refresh)
+    result = asyncio.run(quota.fetch_checkin(account))
+    assert calls["refreshed"] == 1
+    assert result["ok"] is True
+    assert result["already_claimed"] is True
+    assert result["credit"] == 40
+
+
 def test_claim_reads_existing_daily_balance(isolated_db, monkeypatch):
     from providers.loomy import quota
 
