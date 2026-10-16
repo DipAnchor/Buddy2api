@@ -41,7 +41,7 @@ import responses
 import providers
 import router
 import control_plane
-from providers.protocol import KNOWN_CHANNEL_SET
+from providers.protocol import KNOWN_CHANNEL_IDS, KNOWN_CHANNEL_SET
 from providers.qclaw.store import default_guid, upsert_account as upsert_qclaw_account
 from reasoning_controls import (
     InvalidReasoningControl,
@@ -231,6 +231,8 @@ def _validate_key_channel(channel: str) -> str:
     value = str(channel or "").strip()
     if not value:
         raise HTTPException(status_code=400, detail="default_channel is required")
+    if providers.is_retired_channel(value):
+        raise HTTPException(status_code=400, detail=providers.retired_message(value))
     if value not in KNOWN_CHANNEL_SET:
         raise HTTPException(status_code=400, detail=f"Unknown channel '{value}'")
     if not providers.is_channel_enabled(value) or providers.get_provider(value) is None:
@@ -500,7 +502,10 @@ async def admin_channels(authorization: str | None = Header(default=None)):
                 in_container and channel in {"qclaw", "qwenwork", "loomy", "xiaohuanxiong"}
             ),
         })
-    return {"channels": items, "known": list(KNOWN_CHANNEL_SET)}
+    return {
+        "channels": items,
+        "known": [item for item in KNOWN_CHANNEL_IDS if not providers.is_retired_channel(item)],
+    }
 
 
 @app.get("/admin/stats")
@@ -601,6 +606,8 @@ async def admin_add_account(
     data = await _read_json_object(request)
     provider_id = str(data.get("provider") or data.get("channel") or "").strip()
     if provider_id and provider_id != "workbuddy":
+        if providers.is_retired_channel(provider_id):
+            raise HTTPException(status_code=400, detail=providers.retired_message(provider_id))
         provider = providers.get_provider(provider_id)
         if provider is None:
             raise HTTPException(status_code=400, detail=f"Channel '{provider_id}' is not enabled")
@@ -646,10 +653,7 @@ async def admin_add_account(
 
 
 def _qclaw_provider():
-    provider = providers.get_provider("qclaw")
-    if provider is None:
-        raise HTTPException(status_code=400, detail="Channel 'qclaw' is not enabled")
-    return provider
+    raise HTTPException(status_code=400, detail=providers.retired_message("qclaw"))
 
 
 @app.post("/admin/qclaw/import-path")
@@ -1508,6 +1512,9 @@ def main():
     sys.stderr.write(f"  监听: http://{args.host}:{args.port}\n")
     sys.stderr.write(f"  账号: {len(accounts)} 个 ({sum(1 for a in accounts if a['status']=='active')} active)\n")
     sys.stderr.write(f"  通道: {', '.join(providers.enabled_provider_ids())}\n")
+    retired = providers.ignored_retired_ids()
+    if retired:
+        sys.stderr.write("  已下架: QClaw。积分已转到 WorkBuddy，环境变量里的 qclaw 已忽略。\n")
     sys.stderr.write(
         f"  启动导入: {'on' if control_plane.auto_import_enabled() else 'off (CB_GATEWAY_AUTO_IMPORT=1 可打开)'}\n"
     )
