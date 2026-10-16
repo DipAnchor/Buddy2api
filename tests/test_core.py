@@ -370,7 +370,7 @@ def _collect_chat_proxy_stream(
 
     account = {"id": 1, "name": "test-account"}
 
-    async def pick_account(_excluded):
+    async def pick_account(_excluded, **kwargs):
         return account
 
     async def valid_headers(_account):
@@ -462,7 +462,7 @@ def _install_chat_account_stream_fakes(
             account_id = int(headers["X-Test-Account"])
             return FakeResponse(streams[account_id])
 
-    async def pick_account(excluded):
+    async def pick_account(excluded, **kwargs):
         calls["picks"].append(set(excluded))
         return next((account for account in accounts if account["id"] not in excluded), None)
 
@@ -553,7 +553,7 @@ def test_proxy_chat_injects_system_and_uses_intl_backend(monkeypatch, isolated_d
     seen = {}
     account = {"id": 1, "name": "intl", "domain": "www.workbuddy.ai"}
 
-    async def pick(_excluded):
+    async def pick(_excluded, **kwargs):
         return account
 
     async def fake_headers(_account):
@@ -3294,7 +3294,7 @@ def test_non_stream_proxy_fails_over_on_retryable_upstream(isolated_db, monkeypa
     account = db.get_account(account_id)
     calls = []
 
-    async def pick(exclude):
+    async def pick(exclude, **kwargs):
         calls.append("pick")
         return account
 
@@ -3540,7 +3540,7 @@ def test_stall_retry_nonstream_uses_tool_call_result(monkeypatch, isolated_db):
 
     account = {"id": 1, "name": "test-account"}
 
-    async def pick_account(_excluded):
+    async def pick_account(_excluded, **kwargs):
         return account
 
     async def valid_headers(_account):
@@ -3590,7 +3590,7 @@ def test_stall_retry_nonstream_keeps_first_answer_when_retry_has_no_tools(monkey
 
     account = {"id": 1, "name": "test-account"}
 
-    async def pick_account(_excluded):
+    async def pick_account(_excluded, **kwargs):
         return account
 
     async def valid_headers(_account):
@@ -3638,7 +3638,7 @@ def test_stream_tool_loop_retries_stall_like_nonstream(monkeypatch, isolated_db)
     calls = []
     account = {"id": 1, "name": "test-account"}
 
-    async def pick_account(_excluded):
+    async def pick_account(_excluded, **kwargs):
         return account
 
     async def valid_headers(_account):
