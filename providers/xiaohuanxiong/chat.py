@@ -174,7 +174,7 @@ async def _stream(raw: str, api_key_info, model_name: str) -> AsyncGenerator[byt
                         if line == "":
                             continue
                         started = True
-                        yield (line + "\n").encode("utf-8")
+                        yield (line + "\n\n").encode("utf-8")
             _log(api_key_info, account, model_name, True, 0, 0, 0, "stop", 200, "", t0)
             return
         except (httpx.HTTPError, XiaohuanxiongAuthError) as exc:
