@@ -1097,49 +1097,118 @@ def _route_sort_key(account: dict):
     )
 
 
-def _set_sticky_account(aid: int, provider: str = "workbuddy"):
+def _normalize_domain_filter(domain_filter: Optional[list]) -> Optional[list]:
+    """Normalize filter patterns: strip/lower; empty -> None (no filtering)."""
+    if not domain_filter:
+        return None
+    if isinstance(domain_filter, str):
+        domain_filter = [domain_filter]
+    out = [str(item).strip().lower() for item in domain_filter if str(item).strip()]
+    return out or None
+
+
+def _account_domain_host(account: dict) -> str:
+    return _host_from(account.get("domain") or "")
+
+
+def _domain_filter_match(host: str, pattern: str) -> bool:
+    """Match a single pattern: exact host, `*.suffix` (label boundary), or `*`.
+
+    Anything else is not a pattern the admin API accepts; treat it as a
+    non-match so a hand-edited database row cannot widen the filter.
+    """
+    pattern = str(pattern or "").strip().lower()
+    if not pattern:
+        return False
+    if pattern == "*":
+        return True
+    if pattern.startswith("*."):
+        base = pattern[2:]
+        if not base or "*" in base:
+            return False
+        return host == base or host.endswith("." + base)
+    if "*" in pattern:
+        return False
+    return host == pattern
+
+
+def _domain_filter_matches(account: dict, domain_filter: Optional[list]) -> bool:
+    if not domain_filter:
+        return True
+    host = _account_domain_host(account)
+    return any(_domain_filter_match(host, pattern) for pattern in domain_filter)
+
+
+def _sticky_key(provider: str, domain_filter: Optional[list]):
+    """Sticky slot key: one slot per distinct filter set.
+
+    Unfiltered calls keep the plain provider string so every caller that omits
+    the filter shares the same slot (the pre-existing key shape).
+    """
+    if domain_filter:
+        return (provider, tuple(domain_filter))
+    return provider
+
+
+def _set_sticky_account(aid: int, provider: str = "workbuddy", domain_filter: Optional[list] = None):
     with _route_lock:
-        _sticky_account_id[provider] = aid
+        _sticky_account_id[_sticky_key(provider, _normalize_domain_filter(domain_filter))] = aid
 
 
-def pick_account(exclude_ids: set[int] = None, provider: str = "workbuddy") -> Optional[dict]:
-    """选择一个可用账号。优先级越高越先用，同优先级尽量粘住当前账号。"""
+def pick_account(
+    exclude_ids: set[int] = None,
+    provider: str = "workbuddy",
+    domain_filter: Optional[list] = None,
+) -> Optional[dict]:
+    """Pick an available account. Higher priority first; stick to the current one on ties.
+
+    domain_filter: API-key scoped account domain patterns (e.g. ["*.workbuddy.ai"]).
+    Only accounts whose host matches one of the patterns are considered;
+    None/empty means no account-domain restriction.
+    """
     exclude_ids = exclude_ids or set()
+    domain_filter = _normalize_domain_filter(domain_filter)
     accounts = db.get_active_accounts(provider)
     candidates = [
         a for a in accounts
         if a["id"] not in exclude_ids and not account_is_cooling_down(a["id"])
+        and _domain_filter_matches(a, domain_filter)
     ]
     if not candidates:
         return None
 
     highest_priority = max(_route_priority(a) for a in candidates)
     top_candidates = [a for a in candidates if _route_priority(a) == highest_priority]
+    sticky_key = _sticky_key(provider, domain_filter)
     with _route_lock:
-        sticky_id = _sticky_account_id.get(provider)
+        sticky_id = _sticky_account_id.get(sticky_key)
         if sticky_id is not None:
             sticky = next((a for a in top_candidates if a["id"] == sticky_id), None)
             if sticky:
                 return sticky
 
         chosen = sorted(top_candidates, key=_route_sort_key)[0]
-        _sticky_account_id[provider] = chosen["id"]
+        _sticky_account_id[sticky_key] = chosen["id"]
         return chosen
 
 
 async def pick_account_with_fallback(
-    exclude_ids: set[int] = None, provider: str = "workbuddy"
+    exclude_ids: set[int] = None,
+    provider: str = "workbuddy",
+    domain_filter: Optional[list] = None,
 ) -> Optional[dict]:
-    """选账号，如果全部过期则尝试刷新过期账号。只刷新同一 provider。"""
-    account = pick_account(exclude_ids, provider=provider)
+    """Pick an account; refresh expired ones if needed. Only refreshes the same
+    provider and stays inside the domain filter, if any."""
+    domain_filter = _normalize_domain_filter(domain_filter)
+    account = pick_account(exclude_ids, provider=provider, domain_filter=domain_filter)
     if account:
         return account
-
     expired_accounts = sorted(
         (
             account
             for account in db.list_accounts(provider=provider)
             if account.get("status") == "expired"
+            and _domain_filter_matches(account, domain_filter)
         ),
         key=_route_sort_key,
     )
@@ -1148,9 +1217,12 @@ async def pick_account_with_fallback(
             continue
         if await refresh_token(a):
             fresh = db.get_account(a["id"])
-            if fresh:
-                _set_sticky_account(fresh["id"], provider)
-            return fresh
+            # A refresh can move the account to another host; re-check before
+            # handing it to a filtered key, otherwise the first request after a
+            # refresh bypasses the filter once.
+            if fresh and _domain_filter_matches(fresh, domain_filter):
+                _set_sticky_account(fresh["id"], provider, domain_filter)
+                return fresh
     return None
 
 

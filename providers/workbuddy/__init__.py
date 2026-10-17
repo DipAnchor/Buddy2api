@@ -33,13 +33,19 @@ class WorkBuddyProvider:
 
         return aliases.resolve(self.id, model)
 
-    def pick_account(self, exclude_ids: set[int] | None = None) -> Optional[dict]:
-        return auth_manager.pick_account(exclude_ids, provider=self.id)
+    def pick_account(
+        self, exclude_ids: set[int] | None = None, domain_filter: Optional[list] = None
+    ) -> Optional[dict]:
+        return auth_manager.pick_account(
+            exclude_ids, provider=self.id, domain_filter=domain_filter
+        )
 
     async def pick_account_with_fallback(
-        self, exclude_ids: set[int] | None = None
+        self, exclude_ids: set[int] | None = None, domain_filter: Optional[list] = None
     ) -> Optional[dict]:
-        return await auth_manager.pick_account_with_fallback(exclude_ids, provider=self.id)
+        return await auth_manager.pick_account_with_fallback(
+            exclude_ids, provider=self.id, domain_filter=domain_filter
+        )
 
     async def has_usable_account(self) -> bool:
         return await self.pick_account_with_fallback() is not None

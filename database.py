@@ -247,6 +247,21 @@ def _load_allowed_models(value: Any) -> Optional[list]:
         return None
 
 
+def _load_domain_filter(value: Any) -> Optional[list]:
+    """API Key level account domain filter: JSON array string <-> list[str]. Empty/bad -> None."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except (json.JSONDecodeError, TypeError):
+            return None
+    if not isinstance(value, (list, tuple)):
+        return None
+    out = [str(item).strip() for item in value if str(item).strip()]
+    return out or None
+
+
 def get_conn() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH), check_same_thread=False, timeout=5)
@@ -525,6 +540,9 @@ def _migrate_api_keys(conn: sqlite3.Connection):
         "UPDATE api_keys SET default_channel='workbuddy' "
         "WHERE default_channel IS NULL OR default_channel=''"
     )
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
+    if "account_domain_filter" not in cols:
+        conn.execute("ALTER TABLE api_keys ADD COLUMN account_domain_filter TEXT")
 
 
 def _dedupe_accounts_provider_uid(conn: sqlite3.Connection):
@@ -851,18 +869,20 @@ def get_account_checkin_cache(account_id: int, today_only: bool = True) -> Optio
 
 def add_api_key(key: str, name: str, allowed_models: Optional[list] = None,
                 daily_limit: Optional[int] = None, client_type: str = "custom",
-                default_channel: str = "workbuddy") -> int:
+                default_channel: str = "workbuddy",
+                account_domain_filter: Optional[list] = None) -> int:
     now = int(time.time())
     models_json = json.dumps(allowed_models) if allowed_models else None
     limit = int(daily_limit or 0)
     channel = str(default_channel or "workbuddy").strip() or "workbuddy"
+    domain_filter = json.dumps(account_domain_filter) if account_domain_filter else None
     with _lock:
         conn = get_conn()
         cur = conn.execute("""
             INSERT INTO api_keys
                 (key_prefix, key_hash, key_secret, name, status, allowed_models,
-                 daily_limit, client_type, default_channel, created_at)
-            VALUES (?,?,?,?,?,?,?,?,?,?)
+                 daily_limit, client_type, default_channel, account_domain_filter, created_at)
+            VALUES (?,?,?,?,?,?,?,?,?,?,?)
         """, (
             _key_prefix(key),
             _hash_api_key(key),
@@ -873,6 +893,7 @@ def add_api_key(key: str, name: str, allowed_models: Optional[list] = None,
             limit,
             client_type,
             channel,
+            domain_filter,
             now,
         ))
         kid = cur.lastrowid
@@ -884,10 +905,12 @@ def add_api_key(key: str, name: str, allowed_models: Optional[list] = None,
 def update_api_key(kid: int, data: dict):
     fields = []
     values = []
-    for k in ["name", "status", "allowed_models", "daily_limit", "client_type", "default_channel"]:
+    for k in ["name", "status", "allowed_models", "daily_limit", "client_type", "default_channel", "account_domain_filter"]:
         if k in data:
             val = data[k]
             if k == "allowed_models" and isinstance(val, list):
+                val = json.dumps(val) if val else None
+            if k == "account_domain_filter" and isinstance(val, list):
                 val = json.dumps(val) if val else None
             fields.append(f"{k}=?")
             values.append(val)
@@ -920,6 +943,7 @@ def get_api_key_by_key(key: str) -> Optional[dict]:
     d.pop("key_secret", None)
     d.pop("key", None)
     d["allowed_models"] = _load_allowed_models(d.get("allowed_models"))
+    d["account_domain_filter"] = _load_domain_filter(d.get("account_domain_filter"))
     return d
 
 
@@ -948,6 +972,7 @@ def list_api_keys(*, include_secret: bool = False) -> list[dict]:
                 if encrypted_key else None
             )
         d["allowed_models"] = _load_allowed_models(d.get("allowed_models"))
+        d["account_domain_filter"] = _load_domain_filter(d.get("account_domain_filter"))
         result.append(d)
     return result
 

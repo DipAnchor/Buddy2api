@@ -227,6 +227,47 @@ def _reserve_client_quota(key_info: dict | None):
         )
 
 
+def _normalize_domain_pattern(raw) -> str:
+    """Accept only `*`, `*.suffix`, or an exact host; normalize to lower-case."""
+    if not isinstance(raw, str):
+        raise HTTPException(status_code=400, detail="account_domain_filter entries must be strings")
+    pattern = raw.strip().lower()
+    if not pattern:
+        raise HTTPException(status_code=400, detail="account_domain_filter entries must be non-empty")
+    if pattern == "*":
+        return pattern
+    if pattern.startswith("*."):
+        suffix = pattern[2:]
+        host = auth_manager._host_from(suffix)
+        if not suffix or "*" in suffix or host != suffix:
+            raise HTTPException(
+                status_code=400,
+                detail=f"invalid account_domain_filter pattern: {raw!r} "
+                       "(use an exact host, '*.suffix', or '*')",
+            )
+        return pattern
+    # Same host parsing as account["domain"], so a saved pattern always names a
+    # host the picker can actually compare against.
+    host = auth_manager._host_from(pattern)
+    if not host or "*" in host or " " in host:
+        raise HTTPException(
+            status_code=400,
+            detail=f"invalid account_domain_filter pattern: {raw!r} "
+                   "(use an exact host, '*.suffix', or '*')",
+        )
+    return host
+
+
+def _validate_account_domain_filter(raw) -> list | None:
+    """API-key scoped account domain patterns (e.g. ["*.workbuddy.ai"]); empty -> None; else 400."""
+    if raw in (None, ""):
+        return None
+    if not isinstance(raw, list):
+        raise HTTPException(status_code=400, detail="account_domain_filter must be an array of strings")
+    patterns = [_normalize_domain_pattern(item) for item in raw]
+    return patterns or None
+
+
 def _validate_key_channel(channel: str) -> str:
     value = str(channel or "").strip()
     if not value:
@@ -979,12 +1020,17 @@ async def admin_create_key(
     if "default_channel" not in data or data.get("default_channel") in (None, ""):
         raise HTTPException(status_code=400, detail="default_channel is required")
     default_channel = _validate_key_channel(data.get("default_channel"))
+    domain_filter = _validate_account_domain_filter(data.get("account_domain_filter"))
     # 生成 sk- 前缀的 key
     key = f"sk-cb-{secrets.token_urlsafe(32)}"
     kid = db.add_api_key(
-        key, name, allowed, daily_limit, client_type, default_channel=default_channel
+        key, name, allowed, daily_limit, client_type, default_channel=default_channel,
+        account_domain_filter=domain_filter,
     )
-    return {"id": kid, "key": key, "status": "ok", "default_channel": default_channel}
+    return {
+        "id": kid, "key": key, "status": "ok", "default_channel": default_channel,
+        "account_domain_filter": domain_filter,
+    }
 
 
 @app.put("/admin/api-keys/{kid}")
@@ -1011,6 +1057,8 @@ async def admin_update_key(
         and (not isinstance(data["allowed_models"], list) or not all(isinstance(model, str) for model in data["allowed_models"]))
     ):
         raise HTTPException(status_code=400, detail="allowed_models must be an array of strings")
+    if "account_domain_filter" in data:
+        data["account_domain_filter"] = _validate_account_domain_filter(data.get("account_domain_filter"))
     db.update_api_key(kid, data)
     return {"status": "ok"}
 

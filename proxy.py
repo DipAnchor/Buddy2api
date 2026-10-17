@@ -850,6 +850,16 @@ def _sse_from_chat_completion(result: dict) -> list[bytes]:
     return [_json_sse_event(item) for item in chunks] + [b"data: [DONE]\n\n"]
 
 
+def _account_domain_filter(api_key_info: Optional[dict]) -> Optional[list]:
+    """API-key scoped account domain patterns (e.g. ["*.workbuddy.ai"]); None -> no filter."""
+    if not isinstance(api_key_info, dict):
+        return None
+    value = api_key_info.get("account_domain_filter")
+    if isinstance(value, list) and value:
+        return value
+    return None
+
+
 async def _json_chat_with_stall_retry(
     body: dict,
     api_key_info: Optional[dict],
@@ -860,7 +870,9 @@ async def _json_chat_with_stall_retry(
     last_error = None
 
     for attempt in range(max_retries):
-        account = await auth_manager.pick_account_with_fallback(tried_ids)
+        account = await auth_manager.pick_account_with_fallback(
+            tried_ids, domain_filter=_account_domain_filter(api_key_info)
+        )
         if not account:
             break
 
@@ -1038,7 +1050,9 @@ async def _stream_upstream(
     pending_retry_log: dict | None = None
 
     for attempt in range(3):
-        account = await auth_manager.pick_account_with_fallback(tried_ids)
+        account = await auth_manager.pick_account_with_fallback(
+            tried_ids, domain_filter=_account_domain_filter(api_key_info)
+        )
         if not account:
             break
         if pending_retry_log is not None:
