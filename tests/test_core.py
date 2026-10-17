@@ -660,6 +660,15 @@ def test_api_keys_are_encrypted_and_recoverable_for_admin(isolated_db):
     assert "key" not in db.get_api_key_by_key(raw_key)
 
 
+def test_legacy_codex_key_type_can_clear_without_changing_secret(isolated_db):
+    raw_key = "sk-cb-legacy-codex-type"
+    kid = db.add_api_key(raw_key, "old-codex", client_type="codex")
+    db.update_api_key(kid, {"client_type": "custom"})
+    stored = db.list_api_keys(include_secret=True)[0]
+    assert stored["client_type"] == "custom"
+    assert stored["key"] == raw_key
+
+
 def test_hash_only_legacy_api_key_is_reported_as_unrecoverable(isolated_db):
     db.add_api_key("sk-cb-legacy-test-key", "legacy")
     with sqlite3.connect(isolated_db) as conn:
@@ -1187,7 +1196,7 @@ def test_responses_json_schema_constraint_survives_codex_instruction_replacement
         for message in chat_payload["messages"]
         if message["role"] == "system"
     ]
-    assert responses._CODEX_SAFE_SYSTEM_PROMPT in system_messages
+    assert long_instructions in system_messages
     assert any("risk_level" in content and "outcome" in content for content in system_messages)
     assert "response_format" in chat_payload
 
@@ -3345,82 +3354,18 @@ def test_valid_headers_is_async_and_uses_decrypted_token(isolated_db):
     assert headers["Authorization"] == "Bearer access-secret"
 
 
-def test_codex_sanitize_skips_non_codex_prompts():
-    """DSH 等非 Codex prompt 不应被清洗或整体替换。"""
-    dsh_prompt = "You are DSH, an autonomous agent. Use tools: sandbox access, execute shell commands, filesystem. " + ("x" * 2000)
-    payload = {
-        "model": "auto",
-        "messages": [
-            {"role": "system", "content": dsh_prompt},
-            {"role": "user", "content": "run the workflow"},
-        ],
-        "tools": [{"type": "function", "function": {"name": "bash", "description": "execute shell commands"}}],
-    }
-    out = responses.apply_codex_sanitize(dict(payload))
-    assert out["messages"][0]["content"] == dsh_prompt
-    # 工具原样保留（codex 路径会过滤非 function 工具，但这里不触发清洗）
-    assert out["tools"][0]["function"]["description"] == "execute shell commands"
-
-
-def test_codex_sanitize_still_sanitizes_codex_prompts():
-    """带 Codex 特征的 prompt 仍走清洗。"""
-    codex_prompt = (
-        "<permissions instructions>\nFilesystem sandboxing defines which files can be read or written.\n"
-        "sandbox_mode=workspace\n</permissions instructions>\n"
-        "# Escalation Requests\nYou may request escalation.\n"
-        "security policy: do not delete files. " + ("y" * 2000)
-    )
-    payload = {
-        "model": "auto",
-        "messages": [{"role": "system", "content": codex_prompt}, {"role": "user", "content": "hi"}],
-        "tools": [{"type": "function", "function": {"name": "bash", "description": "execute shell commands and sandbox"}}],
-    }
-    out = responses.apply_codex_sanitize(dict(payload))
-    cleaned = out["messages"][0]["content"]
-    assert cleaned != codex_prompt
-    assert "Filesystem sandboxing" not in cleaned
-    assert "security policy" not in cleaned
-    # Codex 特征段落被移除/清洗（本例所有特征段被删除后为空串，同样证明清洗生效）
-    assert cleaned == "" or "coding assistant" in cleaned
-
-
-def test_current_codex_prompt_is_replaced_when_legacy_markers_are_absent():
-    """New Codex CLI prompts must still enter the sanitizer."""
+def test_responses_keeps_long_codex_instructions():
     prompt = (
         "You are Codex, a coding agent.\n"
         "Use the workspace and follow approval rules for shell commands.\n"
         + ("Keep helping with the coding task. " * 80)
     )
-    payload = {
+    chat_payload = responses.responses_to_chat({
         "model": "deepseek-v4-flash",
         "instructions": prompt,
         "input": "hello",
-    }
-
-    chat_payload = responses.responses_to_chat(payload)
-
-    assert responses._looks_like_codex_prompt(prompt)
-    assert chat_payload["messages"][0]["content"] == responses._CODEX_SAFE_SYSTEM_PROMPT
-    assert "approval" not in chat_payload["messages"][0]["content"]
-
-
-def test_mentions_of_codex_or_coding_agent_alone_are_not_sanitized():
-    prompt = "This note mentions Codex but is not the Codex client prompt. " + ("x" * 1500)
-    quoted = "The docs say you are Codex when using the shell. " + ("x" * 1500)
-    payload = {"instructions": prompt, "input": "hello"}
-
-    chat_payload = responses.responses_to_chat(payload)
-    quoted_payload = responses.responses_to_chat({"instructions": quoted, "input": "hello"})
-
+    })
     assert chat_payload["messages"][0]["content"] == prompt
-    assert quoted_payload["messages"][0]["content"] == quoted
-
-
-def test_codex_sanitize_passthrough_without_system_prompt():
-    """无 system message 时原样返回。"""
-    payload = {"model": "auto", "messages": [{"role": "user", "content": "hello"}]}
-    out = responses.apply_codex_sanitize(dict(payload))
-    assert out == payload
 
 
 # ============================================================

@@ -40,6 +40,12 @@ def test_claim_one_uses_traework_claim_not_workbuddy(monkeypatch):
     assert result["claimed"] is True
 
 
+def test_any_channel_key_is_allowed(isolated_db):
+    import server
+
+    assert server._validate_key_channel("*") == "*"
+
+
 def test_create_key_requires_channel(isolated_db):
     from fastapi import HTTPException
     import server

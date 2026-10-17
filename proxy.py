@@ -20,6 +20,7 @@ import httpx
 
 import database as db
 import auth_manager
+import workbuddy_outbound
 from reasoning_controls import (
     chat_reasoning_effort,
     resolve_reasoning_control,
@@ -138,6 +139,19 @@ def _is_tool_stall(body: dict, finish_reason, tool_calls: bool, text: str) -> bo
 
 def _is_retryable_status(status: int) -> bool:
     return status in RETRYABLE_STATUS_CODES or status in {401, 403}
+
+
+def _apply_account_rule(account_id: int, status: int, detail):
+    """Apply a Tencent envelope decision. None means the HTTP status path stays."""
+    ruled = workbuddy_outbound.account_rule(status, detail)
+    if ruled is None:
+        return None
+    action, client_status, client_detail, failure = ruled
+    if action == "expire":
+        auth_manager.mark_account_failure(account_id, 401)
+    elif action == "rotate":
+        auth_manager.mark_account_failure(account_id, 429)
+    return action, client_status, client_detail, failure
 
 
 def _format_httpx_error(exc: BaseException) -> str:
@@ -352,6 +366,7 @@ def build_backend_body(payload: dict) -> dict:
     body["stream"] = True
     if "stream_options" not in body:
         body["stream_options"] = {"include_usage": True}
+    workbuddy_outbound.prepare(body)
     return body
 
 
@@ -912,9 +927,28 @@ async def _json_chat_with_stall_retry(
 
         last_error = result
         err_status = result[1][0]
+        detail = result[1][1]
+        ruled = _apply_account_rule(account["id"], err_status, detail)
+        if ruled is not None:
+            action, client_status, client_detail, failure = ruled
+            last_error = ("error", (client_status, client_detail))
+            error_message = client_detail
+            if isinstance(client_detail, dict):
+                error_data = client_detail.get("error") if isinstance(client_detail.get("error"), dict) else client_detail
+                error_message = error_data.get("message", client_detail) if isinstance(error_data, dict) else client_detail
+            will_retry = action != "stop" and attempt < max_retries - 1
+            _log_request(
+                api_key_info, account, model_name, False,
+                0, 0, 0, 0, "retry" if will_retry else failure,
+                client_status, _failure_log_message(failure, str(error_message)), t0,
+                increment_usage=not will_retry,
+            )
+            if not will_retry:
+                return last_error
+            await _retry_delay(attempt)
+            continue
         auth_manager.mark_account_failure(account["id"], err_status)
         will_retry = _is_retryable_status(err_status) and attempt < max_retries - 1
-        detail = result[1][1]
         error_message = detail
         if isinstance(detail, dict):
             error_data = detail.get("error") if isinstance(detail.get("error"), dict) else detail
@@ -1105,6 +1139,44 @@ async def _stream_upstream(
                     if response.status_code != 200:
                         raw_error = await response.aread()
                         failure, http_msg = _classify_http_status(response.status_code, raw_error)
+                        parsed = _safe_err(raw_error, response.status_code)
+                        ruled = _apply_account_rule(account["id"], response.status_code, parsed)
+                        if ruled is not None:
+                            action, client_status, client_detail, ruled_failure = ruled
+                            message = http_msg
+                            if isinstance(client_detail, dict):
+                                error_data = client_detail.get("error") if isinstance(client_detail.get("error"), dict) else client_detail
+                                if isinstance(error_data, dict) and error_data.get("message"):
+                                    message = str(error_data["message"])
+                            last_error = message.encode("utf-8")
+                            last_error_event = client_detail if isinstance(client_detail, dict) else None
+                            last_status = client_status
+                            last_failure = ruled_failure
+                            if action == "stop" or attempt >= 2:
+                                _log_request(
+                                    api_key_info, account, model_name, True,
+                                    0, 0, 0, 0, ruled_failure, client_status,
+                                    _failure_log_message(ruled_failure, message), t0,
+                                )
+                                if last_error_event is not None:
+                                    yield _json_sse_event(last_error_event)
+                                    yield b"data: [DONE]\n\n"
+                                else:
+                                    yield _err_sse_event(last_error, client_status, ruled_failure)
+                                return
+                            pending_retry_log = {
+                                "account": account,
+                                "prompt_tokens": 0,
+                                "completion_tokens": 0,
+                                "total_tokens": 0,
+                                "credit": 0,
+                                "status": client_status,
+                                "failure": ruled_failure,
+                                "message": _failure_log_message(ruled_failure, message),
+                                "started": t0,
+                                "attempt": attempt,
+                            }
+                            continue
                         last_error = http_msg.encode("utf-8")
                         last_error_event = None
                         last_status = response.status_code

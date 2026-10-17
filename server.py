@@ -272,6 +272,8 @@ def _validate_key_channel(channel: str) -> str:
     value = str(channel or "").strip()
     if not value:
         raise HTTPException(status_code=400, detail="default_channel is required")
+    if value == router.ANY_CHANNEL:
+        return value
     if providers.is_retired_channel(value):
         raise HTTPException(status_code=400, detail=providers.retired_message(value))
     if value not in KNOWN_CHANNEL_SET:
@@ -447,9 +449,6 @@ async def chat_completions(
         payload = normalize_chat_reasoning(payload)
     except InvalidReasoningControl as exc:
         raise _invalid_reasoning_http(exc) from exc
-    # Codex 类型 Key：自动应用内容清洗 + 工具过滤
-    if api_key_info and api_key_info.get("client_type") == "codex":
-        payload = responses.apply_codex_sanitize(payload)
 
     bound = router.bind_http(payload, api_key_info)
     _check_model_access(api_key_info, bound.original, bound.inner, bound.channel)
