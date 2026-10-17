@@ -608,7 +608,7 @@ createApp({
       </div>
     </header>
     <div class="main">
-      <div class="content" v-if="page==='accounts'"><accs :token="token" :toast="tf"/></div>
+      <div class="content" v-show="page==='accounts'"><accs :token="token" :toast="tf"/></div>
       <div class="content" v-if="page==='dashboard'"><dash :token="token" :toast="tf"/></div>
       <div class="content" v-if="page==='keys'"><keys :token="token" :toast="tf"/></div>
       <div class="content" v-if="page==='models'"><mdls :token="token" :toast="tf"/></div>
@@ -1117,27 +1117,13 @@ createApp({
   <div class="ov" v-if="sa" @click.self="sa=false"><div class="modal"><div class="modal-h"><h3>高级手动添加</h3><button class="x" @click="sa=false">&times;</button></div><div class="modal-b"><div class="field"><label>名称</label><input v-model="nm" placeholder="可选"/></div><div class="field"><label>Auth JSON</label><textarea v-model="ai" placeholder="粘贴 .info 文件内容"></textarea><div class="hint">只有自动检测失败时才需要手动粘贴完整 JSON。</div></div></div><div class="modal-f"><button class="btn" @click="sa=false" :disabled="adding">取消</button><button class="btn pri" @click="add" :disabled="adding">{{adding?'添加中':'添加'}}</button></div></div></div>
 </div>`
 }).component('keys',{props:['token','toast'],setup(p){
-  const l=ref([]),ld=ref(true),sa=ref(false),df=ref(null),f=reactive({name:'',models:'',limit:null,domain:'',preset:'custom',channel:'workbuddy'}),res=ref(''),saving=ref(false),copied=ref(false),busy=ref({}),shown=ref({}),codexResult=ref(null),codexBusy=ref(false),channels=ref([{id:'workbuddy',display_name:'WorkBuddy'},{id:'qwenwork',display_name:'QwenWork / 千问办公'},{id:'traework',display_name:'TraeWork'},{id:'loomy',display_name:'Loomy'},{id:'xiaohuanxiong',display_name:'小浣熊'}]);
-  const clientTypes=[
-    {k:'custom',name:'默认',icon:'⚙'},
-    {k:'codex',name:'Codex',icon:'◉'},
-    {k:'opencode',name:'OpenCode',icon:'⬡'},
-    {k:'openclaw',name:'OpenClaw',icon:'⬢'},
-    {k:'cherry',name:'Cherry Studio',icon:'◉'},
-    {k:'nextchat',name:'NextChat',icon:'◉'},
-  ];
-  const presets={
-    codex:{name:'Codex',autoName:'Codex',configTpl:(key)=>`# ~/.codex/config.toml\nmodel = "auto"\nmodel_provider = "buddy2api"\n\n[model_providers.buddy2api]\nname = "Buddy2api"\nbase_url = "http://127.0.0.1:8787/v1"\nwire_api = "responses"\nenv_key = "OPENAI_API_KEY"\n\n# ~/.codex/auth.json\n{"OPENAI_API_KEY":"${key}"}`,note:'Codex 强制 wire_api="responses"，本网关已内置协议转换+内容清洗+模型别名。配置后需完全重启 Codex。',canAutoWrite:true},
-    opencode:{name:'OpenCode',autoName:'OpenCode',configTpl:(key)=>`# opencode.json\n{\n  "provider": {\n    "workbuddy": {\n      "name": "workbuddy",\n      "npm": "@ai-sdk/openai-compatible",\n      "options": {\n        "baseURL": "http://127.0.0.1:8787/v1",\n        "apiKey": "${key}"\n      },\n      "models": {\n        "auto": { "name": "Auto", "limit": { "context": 200000, "output": 32000 } }\n      }\n    }\n  }\n}`,note:'运行 opencode run -m workbuddy/auto "你好" 测试。',canAutoWrite:false},
-    openclaw:{name:'OpenClaw',autoName:'OpenClaw',configTpl:(key)=>`# 环境变量\nexport OPENAI_BASE_URL=http://127.0.0.1:8787/v1\nexport OPENAI_API_KEY=${key}\nexport OPENAI_MODEL=auto`,note:'OpenClaw 通过环境变量配置，写入 shell profile 后 source 即可。',canAutoWrite:false},
-    cherry:{name:'Cherry Studio',autoName:'Cherry Studio',configTpl:(key)=>`Base URL: http://127.0.0.1:8787/v1\nAPI Key: ${key}\nModel: auto\n供应商类型: OpenAI Compatible`,note:'Cherry Studio 设置 → 模型服务 → 添加自定义供应商。',canAutoWrite:false},
-    nextchat:{name:'NextChat',autoName:'NextChat',configTpl:(key)=>`接口地址: http://127.0.0.1:8787\nAPI Key: ${key}\n模型: auto`,note:'NextChat 自定义接口地址填到 /v1 上一级。',canAutoWrite:false},
-    custom:{name:'默认',autoName:'',configTpl:(key)=>`Base URL: http://127.0.0.1:8787/v1\nAPI Key: ${key}\nModel: auto\nEndpoint: /v1/chat/completions`,note:'',canAutoWrite:false},
-  };
+  const l=ref([]),ld=ref(true),sa=ref(false),df=ref(null),f=reactive({name:'',models:'',limit:null,domain:'',channel:'workbuddy'}),res=ref(''),saving=ref(false),copied=ref(false),busy=ref({}),shown=ref({}),channels=ref([{id:'workbuddy',display_name:'WorkBuddy'},{id:'qwenwork',display_name:'QwenWork / 千问办公'},{id:'traework',display_name:'TraeWork'},{id:'loomy',display_name:'Loomy'},{id:'xiaohuanxiong',display_name:'小浣熊'}]);
+  const anyChannel={id:'*',display_name:'自动通道'};
+  function channelOptions(){const rest=channels.value.filter(c=>c.id!=='*');return [anyChannel].concat(rest)}
   function busyKey(id,k){return busy.value[id+'-'+k]}
   async function withBusy(k,id,fn){busy.value={...busy.value,[id+'-'+k]:true};try{return await fn()}finally{const o={...busy.value};delete o[id+'-'+k];busy.value=o}}
   async function load(){ld.value=true;try{l.value=await api.get('/admin/api-keys',p.token);try{const ch=await api.get('/admin/channels',p.token);if(ch.channels?.length)channels.value=ch.channels}catch(e){}}catch(e){p.toast(apiErr(e,'加载失败'),'err')}ld.value=false}
-  async function create(){if(saving.value)return;if(!f.channel){p.toast('请选择通道','err');return}saving.value=true;try{const b={name:f.name||presets[f.preset].autoName||'Key',client_type:f.preset==='codex'?'codex':'custom',default_channel:f.channel};if(f.models)b.allowed_models=f.models.split(',').map(s=>s.trim()).filter(Boolean);if(f.limit)b.daily_limit=parseInt(f.limit);if(f.domain)b.account_domain_filter=f.domain.split(',').map(s=>s.trim()).filter(Boolean);const r=await api.post('/admin/api-keys',b,p.token);res.value=r.key;p.toast('创建成功');await load()}catch(e){p.toast(apiErr(e,'创建失败'),'err')}saving.value=false}
+  async function create(){if(saving.value)return;if(!f.channel){p.toast('请选择通道','err');return}saving.value=true;try{const b={name:f.name||'Key',client_type:'custom',default_channel:f.channel};if(f.models)b.allowed_models=f.models.split(',').map(s=>s.trim()).filter(Boolean);if(f.limit)b.daily_limit=parseInt(f.limit);if(f.domain)b.account_domain_filter=f.domain.split(',').map(s=>s.trim()).filter(Boolean);const r=await api.post('/admin/api-keys',b,p.token);res.value=r.key;p.toast('创建成功');await load()}catch(e){p.toast(apiErr(e,'创建失败'),'err')}saving.value=false}
   async function setChannel(k,channel){await withBusy('ch',k.id,async()=>{try{await api.put('/admin/api-keys/'+k.id,{default_channel:channel},p.token);p.toast('已切换通道');await load()}catch(e){p.toast(apiErr(e,'切换失败'),'err')}})}
   function domText(k){return (k.account_domain_filter&&k.account_domain_filter.length)?k.account_domain_filter.join(', '):'不限'}
   function openDom(k){df.value={id:k.id,name:k.name||('Key '+k.id),text:(k.account_domain_filter||[]).join(', ')}}
@@ -1147,53 +1133,39 @@ createApp({
   function cp(v){navigator.clipboard.writeText(v);copied.value=true;p.toast('已复制','info');setTimeout(()=>copied.value=false,1500)}
   function toggleKey(k){shown.value={...shown.value,[k.id]:!shown.value[k.id]}}
   function tok(v){v=Number(v||0);if(v>=1e9)return (v/1e9).toFixed(v>=1e10?1:2).replace(/\.?0+$/,'')+'B';if(v>=1e6)return (v/1e6).toFixed(v>=1e7?1:2).replace(/\.?0+$/,'')+'M';return v.toLocaleString()}
-  function close(){sa.value=false;res.value='';f.name='';f.models='';f.limit=null;f.domain='';f.preset='custom';f.channel='workbuddy';codexResult.value=null}
-  async function codexAutoWrite(){
-    if(codexBusy.value||!res.value)return;codexBusy.value=true;codexResult.value=null;
-    try{const r=await api.post('/admin/codex/setup',{api_key:res.value},p.token);codexResult.value=r;if(r.status==='ok')p.toast('Codex 配置已写入','ok');else p.toast('写入失败','err')}catch(e){p.toast(apiErr(e,'写入失败'),'err');codexResult.value={status:'error',message:String(e)}}
-    codexBusy.value=false;
+  function close(){sa.value=false;res.value='';f.name='';f.models='';f.limit=null;f.domain='';f.channel='workbuddy'}
+  const legacyKeys=computed(()=>l.value.filter(k=>k.client_type==='codex'))
+  const updatingLegacy=ref(false)
+  async function updateLegacyKeys(){
+    const rows=legacyKeys.value
+    if(!rows.length||updatingLegacy.value)return
+    updatingLegacy.value=true
+    try{
+      for(const k of rows){await api.put('/admin/api-keys/'+k.id,{client_type:'custom'},p.token)}
+      p.toast('已更新为普通 Key，字符串没有变','ok')
+      await load()
+    }catch(e){p.toast(apiErr(e,'更新失败'),'err')}
+    updatingLegacy.value=false
   }
-  onMounted(load);return{l,ld,sa,df,f,res,saving,copied,busyKey,shown,clientTypes,presets,channels,load,create,setChannel,domText,openDom,saveDom,toggle,del,cp,toggleKey,tok,close,I,codexResult,codexBusy,codexAutoWrite}
+  onMounted(load);return{l,ld,sa,df,f,res,saving,copied,busyKey,shown,channelOptions,legacyKeys,updatingLegacy,updateLegacyKeys,load,create,setChannel,domText,openDom,saveDom,toggle,del,cp,toggleKey,tok,close,I}
 },template:`
 <div>
   <div class="phead"><h1>API Keys</h1><p>客户端访问密钥</p></div>
   <div class="tbar"><button class="btn s pri" @click="sa=true"><span v-html="I.plus"></span>创建</button><button class="btn s" @click="load" :disabled="ld"><span v-html="I.refresh"></span>{{ld?'刷新中':'刷新'}}</button><div class="spacer"></div><span class="tag" v-if="l.length">{{l.length}}个</span></div>
+  <div class="callout" v-if="legacyKeys.length" style="margin-bottom:12px">有 {{legacyKeys.length}} 把旧的 Codex 类型 Key。更新后字符串不变，客户端不用改配置，只是不再按类型裁超长历史。<button class="btn s" style="margin-left:8px" @click="updateLegacyKeys" :disabled="updatingLegacy">{{updatingLegacy?'更新中':'更新为普通 Key'}}</button></div>
   <div v-if="ld" class="load"><div class="spin"></div></div>
-  <div class="card" v-else-if="l.length"><table><thead><tr><th>名称</th><th>类型</th><th>通道</th><th>账号域</th><th>Key</th><th>状态</th><th>模型</th><th>今日/限额</th><th>请求</th><th>Token</th><th></th></tr></thead><tbody>
-    <tr v-for="k in l" :key="k.id"><td style="font-weight:600">{{k.name||'-'}}</td><td><span class="tag" :style="{background:k.client_type==='codex'?'var(--blue-bg)':'#f5f5f5',color:k.client_type==='codex'?'var(--blue)':'var(--fg3)'}">{{k.client_type||'custom'}}</span></td><td><select class="selectctl" :value="k.default_channel||'workbuddy'" @change="setChannel(k,$event.target.value)" :disabled="busyKey(k.id,'ch')"><option v-for="c in channels" :key="c.id" :value="c.id">{{c.display_name||c.id}}</option></select></td><td><div style="display:flex;align-items:center;gap:5px;white-space:nowrap"><span :title="domText(k)" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;display:inline-block">{{domText(k)}}</span><button class="btn s" @click="openDom(k)" title="编辑账号域过滤">改</button></div></td><td><div style="display:flex;align-items:center;gap:5px;min-width:230px"><code style="flex:1;word-break:break-all">{{shown[k.id]&&k.key?k.key:(k.key_prefix||'-')}}</code><button v-if="k.key" class="btn s" @click="toggleKey(k)">{{shown[k.id]?'隐藏':'显示'}}</button><button v-if="k.key" class="btn s" @click="cp(k.key)" title="复制完整 API Key"><span v-html="I.copy"></span></button><span v-else class="tag" title="旧版本只保存了哈希，无法还原原始 Key">旧 Key 不可恢复</span></div></td><td><span class="badge" :class="k.status">{{k.status}}</span></td><td>{{k.allowed_models?k.allowed_models.join(', '):'全部'}}</td><td>{{k.today_requests||0}} / {{k.daily_limit||'不限'}}</td><td>{{k.total_requests}}</td><td>{{tok(k.total_tokens)}}</td><td><button class="btn s" @click="toggle(k)" :disabled="busyKey(k.id,'toggle')" style="margin-right:4px">{{busyKey(k.id,'toggle')?'...':(k.status==='active'?'禁用':'启用')}}</button><button class="btn s danger" @click="del(k)" :disabled="busyKey(k.id,'del')">{{busyKey(k.id,'del')?'...':'删除'}}</button></td></tr>
+  <div class="card" v-else-if="l.length"><table><thead><tr><th>名称</th><th>通道</th><th>账号域</th><th>Key</th><th>状态</th><th>模型</th><th>今日/限额</th><th>请求</th><th>Token</th><th></th></tr></thead><tbody>
+    <tr v-for="k in l" :key="k.id"><td style="font-weight:600">{{k.name||'-'}}</td><td><select class="selectctl" :value="k.default_channel||'workbuddy'" @change="setChannel(k,$event.target.value)" :disabled="busyKey(k.id,'ch')"><option v-for="c in channelOptions()" :key="c.id" :value="c.id">{{c.display_name||c.id}}</option></select></td><td><div style="display:flex;align-items:center;gap:5px;white-space:nowrap"><span :title="domText(k)" style="max-width:140px;overflow:hidden;text-overflow:ellipsis;display:inline-block">{{domText(k)}}</span><button class="btn s" @click="openDom(k)" title="编辑账号域过滤">改</button></div></td><td><div style="display:flex;align-items:center;gap:5px;min-width:230px"><code style="flex:1;word-break:break-all">{{shown[k.id]&&k.key?k.key:(k.key_prefix||'-')}}</code><button v-if="k.key" class="btn s" @click="toggleKey(k)">{{shown[k.id]?'隐藏':'显示'}}</button><button v-if="k.key" class="btn s" @click="cp(k.key)" title="复制完整 API Key"><span v-html="I.copy"></span></button><span v-else class="tag" title="旧版本只保存了哈希，无法还原原始 Key">旧 Key 不可恢复</span></div></td><td><span class="badge" :class="k.status">{{k.status}}</span></td><td>{{k.allowed_models?k.allowed_models.join(', '):'全部'}}</td><td>{{k.today_requests||0}} / {{k.daily_limit||'不限'}}</td><td>{{k.total_requests}}</td><td>{{tok(k.total_tokens)}}</td><td><button class="btn s" @click="toggle(k)" :disabled="busyKey(k.id,'toggle')" style="margin-right:4px">{{busyKey(k.id,'toggle')?'...':(k.status==='active'?'禁用':'启用')}}</button><button class="btn s danger" @click="del(k)" :disabled="busyKey(k.id,'del')">{{busyKey(k.id,'del')?'...':'删除'}}</button></td></tr>
   </tbody></table></div>
   <div class="card card-p empty" v-else><div class="em">🔑</div><p>暂无 Key</p></div>
   <div class="ov" v-if="df" @click.self="df=null"><div class="modal" style="max-width:520px"><div class="modal-h"><h3>账号域过滤 · {{df.name}}</h3><button class="x" @click="df=null">&times;</button></div><div class="modal-b"><div class="field"><label>允许的账号域</label><input v-model="df.text" placeholder="*.workbuddy.ai, www.workbuddy.cn（留空=不限）"/><div class="hint">只接受精确域名、<code>*.后缀</code> 或 <code>*</code>，逗号分隔。留空并保存即清空过滤。</div></div></div><div class="modal-f"><button class="btn" @click="df=null">取消</button><button class="btn pri" @click="saveDom" :disabled="busyKey(df.id,'dm')">{{busyKey(df.id,'dm')?'保存中':'保存'}}</button></div></div></div>
   <div class="ov" v-if="sa" @click.self="close"><div class="modal" style="max-width:560px"><div class="modal-h"><h3>创建 Key</h3><button class="x" @click="close">&times;</button></div><div class="modal-b">
     <template v-if="res">
-      <div class="field"><label>新 Key</label><div class="keybox">{{res}}</div><button class="btn s pri" style="margin-top:8px" @click="cp(res)">{{copied?'已复制':'复制 Key'}}</button><div class="hint" style="margin-top:6px">关闭后仍可在 API Keys 列表中查看和复制。</div></div>
-      <div v-if="f.preset!=='custom'" style="margin-top:16px">
-        <div style="font-weight:600;font-size:13px;margin-bottom:8px">{{presets[f.preset].name}} 接入配置</div>
-        <div v-if="f.preset==='codex'" class="callout" style="margin-bottom:10px;font-size:12px;background:var(--green-bg);border-color:#c3e6cc;color:#006633">
-          <strong>已为该 Key 自动启用 Codex 专用处理</strong> — 内容清洗（sandbox/filesystem/execute 等敏感词替换）、模型别名映射（gpt-5.5→glm-5.2 等）、工具过滤、Responses API 协议转换均自动生效，无需额外配置。
-        </div>
-        <div v-if="presets[f.preset].note" class="callout" style="margin-bottom:10px;font-size:12px">{{presets[f.preset].note}}</div>
-        <div class="codeblk" style="font-size:11px;line-height:1.6;white-space:pre-wrap;word-break:break-all">{{presets[f.preset].configTpl(res)}}</div>
-        <div style="display:flex;gap:8px;margin-top:10px">
-          <button class="btn s" @click="cp(presets[f.preset].configTpl(res))">复制配置</button>
-          <button v-if="presets[f.preset].canAutoWrite" class="btn s pri" @click="codexAutoWrite" :disabled="codexBusy">{{codexBusy?'写入中...':'一键写入 Codex 配置文件'}}</button>
-        </div>
-        <div v-if="codexResult" style="margin-top:10px;padding:10px;border-radius:var(--r);border:1px solid var(--border);font-size:12px" :style="{color:codexResult.status==='ok'?'var(--green)':'var(--red)'}">
-          <strong>{{codexResult.status==='ok'?'写入成功':'写入失败'}}</strong>
-          <div v-if="codexResult.status==='ok'" style="color:var(--fg2);margin-top:4px">已写入 config.toml + auth.json，请重启 Codex。</div>
-          <div v-else style="margin-top:4px">{{codexResult.message}}</div>
-        </div>
-      </div>
+      <div class="field"><label>新 Key</label><div class="keybox">{{res}}</div><button class="btn s pri" style="margin-top:8px" @click="cp(res)">{{copied?'已复制':'复制 Key'}}</button><div class="hint" style="margin-top:6px">关闭后仍可在 API Keys 列表中查看和复制。客户端接入示例在设置页。</div></div>
     </template>
     <template v-else>
-      <div class="field"><label>客户端类型</label>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button v-for="t in clientTypes" :key="t.k" :class="['btn','s',{on:f.preset===t.k}]" @click="f.preset=t.k" style="border:1px solid var(--border);border-radius:var(--r);padding:6px 12px;font-size:12px;cursor:pointer" :style="{background:f.preset===t.k?'var(--blue-bg)':'var(--bg)',color:f.preset===t.k?'var(--blue)':'var(--fg)',borderColor:f.preset===t.k?'var(--blue-border)':'var(--border)',fontWeight:f.preset===t.k?'600':'400'}">{{t.icon}} {{t.name}}</button>
-        </div>
-        <div class="hint" style="margin-top:4px">选择目标客户端，创建后自动展示对应配置。选"默认"仅创建 Key（无任何改写，原样透传）。Codex 类型会对请求做敏感词清洗；其余类型仅展示对应客户端的接入配置模板，行为与"默认"完全一致。</div>
-      </div>
-      <div class="field"><label>通道</label><select class="selectctl" v-model="f.channel"><option v-for="c in channels" :key="c.id" :value="c.id">{{c.display_name||c.id}}</option></select><div class="hint">每把 Key 只打到所选通道，不会静默切到另一家。可在列表里随时切换；进行中的请求不会改绑。</div></div>
-      <div class="field"><label>名称</label><input v-model="f.name" :placeholder="presets[f.preset].autoName||'Key 名称'"/></div>
+      <div class="field"><label>通道</label><select class="selectctl" v-model="f.channel"><option v-for="c in channelOptions()" :key="c.id" :value="c.id">{{c.display_name||c.id}}</option></select><div class="hint">选具体通道时，这把 Key 只打那一家。选「自动通道」后，带前缀的 <span class="mono">通道/模型</span> 打到对应通道；不带前缀的模型进第一家认得它且已有账号的通道；<span class="mono">auto</span> 走第一个有可用账号的通道。额度用尽不会换到另一家。可在列表里切换；进行中的请求不会改绑。</div></div>
+      <div class="field"><label>名称</label><input v-model="f.name" placeholder="Key 名称"/></div>
       <div class="field"><label>允许模型</label><input v-model="f.models" placeholder="auto,glm-5.2（留空=全部）"/></div>
       <div class="field"><label>每日请求限额</label><input v-model="f.limit" type="number" placeholder="不限"/></div>
       <div class="field"><label>账号域过滤</label><input v-model="f.domain" placeholder="*.workbuddy.ai, www.workbuddy.cn（留空=不限）"/><div class="hint">只接受精确域名、<code>*.后缀</code> 或 <code>*</code>，逗号分隔；创建后可在列表中修改。</div></div>
@@ -1371,7 +1343,7 @@ createApp({
   const s=ref({...defaults}),stats=ref(null),ld=ref(true),saving=ref(false),copied=ref(''),setupTab=ref('codex'),adminToken=ref(p.token||'');
   const keysList=ref([]),codexKeyInput=ref(''),codexStatus=ref(null),codexBusy=ref(false),codexResult=ref(null);
   const presets={
-    codex:{name:'Codex (OpenAI)',base:'http://127.0.0.1:8787/v1',model:'auto',note:'Codex 强制使用 Responses API (wire_api="responses")。本网关已内置协议转换层，自动将 /v1/responses 映射到后端 Chat Completions。模型别名、内容清洗均自动启用。'},
+    codex:{name:'Codex (OpenAI)',base:'http://127.0.0.1:8787/v1',model:'auto',note:'Codex 强制使用 Responses API (wire_api="responses")。本网关已内置协议转换层，自动将 /v1/responses 映射到后端 Chat Completions。模型别名自动启用。'},
     opencode:{name:'OpenCode / OpenClaw',base:'http://127.0.0.1:8787/v1',model:'auto',note:'运行在宿主机上的客户端直接使用 127.0.0.1。'},
     sub2api:{name:'sub2api Docker',base:'http://host.docker.internal:8787/v1',model:'auto',note:'sub2api 在 Docker 容器内访问宿主机时使用 host.docker.internal，不要填 localhost。'},
     cherry:{name:'Cherry Studio',base:'http://127.0.0.1:8787/v1',model:'auto',note:'供应商类型选择 OpenAI Compatible，Key 使用 API Keys 页面创建的 sk-cb。'},
@@ -1480,7 +1452,7 @@ createApp({
     <div class="card">
       <div class="card-h">客户端接入向导<span class="sub">按运行位置选择地址</span></div>
       <div class="card-p">
-        <div class="callout" style="margin-bottom:12px">宿主机客户端用 <span class="mono">http://127.0.0.1:8787/v1</span>；Docker 容器里的 sub2api 用 <span class="mono">http://host.docker.internal:8787/v1</span>。Codex 选择 "Codex (OpenAI)" 标签查看专用配置（wire_api、内容清洗等自动处理）。</div>
+        <div class="callout" style="margin-bottom:12px">宿主机客户端用 <span class="mono">http://127.0.0.1:8787/v1</span>；Docker 容器里的 sub2api 用 <span class="mono">http://host.docker.internal:8787/v1</span>。Codex 选择 "Codex (OpenAI)" 标签查看专用配置（wire_api 等自动处理）。</div>
         <div class="setup-tabs"><button v-for="(x,k) in presets" :key="k" :class="{on:setupTab===k}" @click="setupTab=k">{{x.name}}</button></div>
         <div class="setup-panel">
           <div class="info-list">
@@ -1501,7 +1473,7 @@ createApp({
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:12px">
             <div><strong>Responses API 转换</strong><br/><span style="color:var(--fg2)">/v1/responses 请求自动转换为 Chat Completions 转发后端，响应再映射回 Responses SSE 事件格式</span></div>
             <div><strong>模型别名映射</strong><br/><span style="color:var(--fg2)">gpt-5.5 / gpt-5.4 / o3 / o4-mini 等自动映射到 glm-5.2 / deepseek-v4-pro 等后端模型</span></div>
-            <div><strong>内容清洗</strong><br/><span style="color:var(--fg2)">Codex system prompt 中的 sandbox / filesystem / execute / elevated 等敏感词自动替换，避免触发腾讯内容审核</span></div>
+            <div><strong>模型前缀</strong><br/><span style="color:var(--fg2)">自动通道的 Key 看到 <span class="mono">通道/模型</span> 就打到那一家。额度用尽不会自动换通道</span></div>
             <div><strong>工具过滤</strong><br/><span style="color:var(--fg2)">非 function 类型工具（web_search / file_search 等）自动过滤，developer 角色映射为 system</span></div>
           </div>
         </div>

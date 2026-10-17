@@ -4,7 +4,7 @@
 
 > 把本机已经登录的消费级 AI 客户端，接成 OpenAI 兼容接口，给 Codex、OpenCode、Cherry Studio、NextChat 等用。默认打开 Work Buddy / CodeBuddy、千问办公（QwenWork）、TraeWork、讯飞 Loomy、商汤小浣熊五个通道；管理页下拉选其中一个。一次请求只走一个通道。QClaw 已停止运营，通道已下架，积分请改用 WorkBuddy。
 
-当前版本 **2.2.1**。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
+当前版本 **2.2.2**。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
 
 **仅限自己的账号。严禁使用接码平台、批量注册或任何批量方式薅羊毛。** 不要把网关公开给别人用，也不要代领或倒卖额度。
 
@@ -12,7 +12,7 @@
 
 ## 这是什么？
 
-Buddy2api 在本机提供 `http://127.0.0.1:8787/v1`。你在官方客户端里登录并且还有额度，这个网关把本机登录导入进来，把请求转到对应厂商。普通客户端走 Chat Completions；Codex 走 `/v1/responses`，管理页把 Key 类型选成 Codex 时会做一轮内容清洗。
+Buddy2api 在本机提供 `http://127.0.0.1:8787/v1`。你在官方客户端里登录并且还有额度，这个网关把本机登录导入进来，把请求转到对应厂商。普通客户端走 Chat Completions；Codex 走 `/v1/responses`。Key 可以绑一家通道，也可以选自动通道，用 `通道/模型` 指定这一跳的厂商。
 
 五个通道默认都开。没装、没登录的通道，账号页检测为空，不会自动入库。QClaw 已下架，环境变量里的 `qclaw` 会被忽略。
 
@@ -108,7 +108,7 @@ python server.py
 
 1. 打开「账号」。WorkBuddy 可以点「浏览器登录」，在官方页面登录后自动入库，国内和国际站都能选。也可以点「一键导入全部通道」读取各启用通道的默认登录目录；自定义路径仅用于当前通道。未登录的通道会跳过。已入库的号用「一键保活」续期并领取今日积分；只想领取时用「一键领取今日积分」。定时保活和定时领取在设置页，默认关闭，要手动打开并保存。
 2. 点该账号的「测试」，能返回一句话就说明这条通道通了。
-3. 打开「API Keys」，**先选同一个通道**再创建。给 Codex 用时 Key 类型选 Codex，接口用 `/v1/responses`。创建后可以再显示、复制完整 Key。
+3. 打开「API Keys」，选择通道后创建。要一把 Key 打多家时选自动通道，模型写成 `通道/模型`。Codex 接口用 `/v1/responses`。创建后可以再显示、复制完整 Key。
 4. 在客户端里填：
    - Base URL：`http://127.0.0.1:8787/v1`
    - API Key：刚复制的 Key
@@ -164,7 +164,7 @@ python server.py
 | 模型 | WorkBuddy：`auto` / `glm-5.2`。QwenWork：`auto` 或 `qwork-advanced`。TraeWork：`auto` 或 `qwen-3.7-plus`。Loomy、小浣熊：`auto` |
 | Stream | 建议开 |
 
-接口：`/v1/chat/completions`、`/v1/responses`、`/v1/models`。没加前缀的 `auto` 走这把 Key 绑定的通道。Codex 用 Responses 接口；管理页选 Codex 类型的 Key 会按 Codex 特征 prompt 做清洗（其它客户端借用这把 Key、但没有 Codex 特征时不改写）。
+接口：`/v1/chat/completions`、`/v1/responses`、`/v1/models`。绑死一家的 Key，没加前缀的 `auto` 走那一家。自动通道的 Key，带前缀的模型打到对应通道；`auto` 走第一个已有账号的通道。额度用尽不会换到另一家。
 
 ### 模型容量与自动发现
 

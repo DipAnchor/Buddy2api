@@ -4,7 +4,7 @@
 
 > Local consumer AI clients → one OpenAI-compatible API for Codex, OpenCode, Cherry Studio, NextChat, and similar agents. Work Buddy / CodeBuddy, QwenWork, TraeWork, iFlytek Loomy, and SenseTime Xiaohuanxiong are on by default; pick one in the UI dropdown. Each request stays on one channel. QClaw is retired; its credits moved to WorkBuddy.
 
-Release **2.2.1**. Local use only, and only with accounts you personally own. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
+Release **2.2.2**. Local use only, and only with accounts you personally own. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
 
 **Your own accounts only. Do not use SMS-code platforms, bulk registration, or any batch method to farm credits.** Do not expose the gateway to other people, claim rewards for them, or resell quota.
 
@@ -12,7 +12,7 @@ Default loopback startup opens the management page without an Admin Token. Resta
 
 ## What is this?
 
-Buddy2api listens on `http://127.0.0.1:8787/v1`. You stay signed into the official apps; this gateway imports those sessions and forwards chat. Typical clients use Chat Completions. Codex uses `/v1/responses`; create the key as type Codex in the UI to enable Codex prompt sanitization.
+Buddy2api listens on `http://127.0.0.1:8787/v1`. You stay signed into the official apps; this gateway imports those sessions and forwards chat. Typical clients use Chat Completions. Codex uses `/v1/responses`. A key can stay on one channel, or use automatic channel and pick the vendor with a `channel/model` id.
 
 Five channels are on by default. A channel with no local login shows empty on Accounts; nothing is imported until you click Import. `qclaw` in `CB_GATEWAY_PROVIDERS` is ignored.
 
