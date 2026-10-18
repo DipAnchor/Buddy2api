@@ -251,3 +251,60 @@ def test_refresh_probes_valid_session_without_password(isolated_db, monkeypatch)
     monkeypatch.setattr(token.httpx, "AsyncClient", FakeClient)
     fresh = asyncio.run(token.refresh_account(db.get_account(account_id)))
     assert fresh["access_token"] == "sess"
+
+
+def test_refresh_names_empty_transport_error_and_retries(isolated_db, monkeypatch):
+    from providers.loomy import token
+
+    account_id = db.add_account(
+        {
+            "name": "loomy",
+            "uid": "missing-local",
+            "provider": "loomy",
+            "access_token": "sess",
+            "expires_at": 9_999_999_999_999,
+        }
+    )
+    calls = {"n": 0}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, **kwargs):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise token.httpx.ConnectTimeout("")
+            class FakeResponse:
+                status_code = 200
+            return FakeResponse()
+
+    monkeypatch.setattr(token, "_PROBE_RETRY_SECONDS", 0)
+    monkeypatch.setattr(token.httpx, "AsyncClient", FakeClient)
+    fresh = asyncio.run(token.refresh_account(db.get_account(account_id)))
+    assert calls["n"] == 2
+    assert fresh["access_token"] == "sess"
+
+    class AlwaysTimeout:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def get(self, url, **kwargs):
+            raise token.httpx.ReadTimeout("")
+
+    monkeypatch.setattr(token.httpx, "AsyncClient", AlwaysTimeout)
+    with pytest.raises(token.LoomyAuthError) as caught:
+        asyncio.run(token.refresh_account(db.get_account(account_id)))
+    assert str(caught.value) == "Loomy 保活请求失败: ReadTimeout"

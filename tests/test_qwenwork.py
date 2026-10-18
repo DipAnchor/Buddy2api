@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import time
 from pathlib import Path
 
 import pytest
@@ -449,6 +450,163 @@ def test_claim_400_includes_upstream_message(isolated_db, monkeypatch):
     assert result["ok"] is False
     assert result["status_code"] == 400
     assert "unexpected body" in result["message"]
+
+
+def test_refresh_uses_openapi_identity_without_bearer(isolated_db, monkeypatch):
+    from providers.qwenwork import token
+
+    account_id = db.add_account(
+        {
+            "name": "qw",
+            "uid": "qw-refresh",
+            "provider": "qwenwork",
+            "access_token": "old-access",
+            "refresh_token": "old-refresh",
+            "expires_at": 1_700_000_000_000,
+        }
+    )
+    calls = []
+
+    class FakeResponse:
+        status_code = 200
+
+        def json(self):
+            return {
+                "device_token": "new-access",
+                "refresh_token": "new-refresh",
+                "expires_in": 3600,
+                "refresh_token_expires_in": 86400,
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, **kwargs):
+            calls.append((url, kwargs["headers"], kwargs["json"]))
+            return FakeResponse()
+
+    monkeypatch.setattr(token.httpx, "AsyncClient", FakeClient)
+    fresh = asyncio.run(token.refresh_account(db.get_account(account_id)))
+    assert calls[0][0].endswith("/api/v1/deviceToken/refresh")
+    assert calls[0][1]["X-QwenWork-Version"] == "1.3.1"
+    assert calls[0][1]["X-QwenWork-App-Mode"] == "standard"
+    assert calls[0][1]["User-Agent"] == "qoderwork/1.3.1"
+    assert "Authorization" not in calls[0][1]
+    assert calls[0][2] == {"refresh_token": "old-refresh", "target": "c"}
+    assert fresh["access_token"] == "new-access"
+    assert fresh["refresh_token"] == "new-refresh"
+
+
+def test_refresh_401_explains_claim_can_still_succeed(isolated_db, monkeypatch):
+    from providers.qwenwork import token
+
+    expires_at = int((time.time() + 3 * 86400) * 1000)
+    account_id = db.add_account(
+        {
+            "name": "qw",
+            "uid": "qw-dead-refresh",
+            "provider": "qwenwork",
+            "access_token": "still-valid",
+            "refresh_token": "dead-refresh",
+            "expires_at": expires_at,
+        }
+    )
+
+    class FakeResponse:
+        status_code = 401
+
+        def json(self):
+            return {
+                "errorCode": "INVALID_REFRESH_TOKEN",
+                "errorMessage": "refresh token is invalid",
+                "upstreamError": {"code": "invalid_grant"},
+            }
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, **kwargs):
+            return FakeResponse()
+
+    monkeypatch.setattr(token.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(token, "read_official_session", lambda path=None: None)
+    with pytest.raises(token.QwenWorkAuthError) as caught:
+        asyncio.run(token.refresh_account(db.get_account(account_id)))
+    assert "续期令牌已失效" in str(caught.value)
+    assert "领取不受影响" in str(caught.value)
+    saved = db.get_account(account_id)
+    assert saved["access_token"] == "still-valid"
+    assert saved["refresh_token"] == "dead-refresh"
+
+
+def test_refresh_retries_a_newer_official_session(isolated_db, monkeypatch):
+    from providers.qwenwork import token
+
+    account_id = db.add_account(
+        {
+            "name": "qw",
+            "uid": "qw-stale",
+            "provider": "qwenwork",
+            "access_token": "old-access",
+            "refresh_token": "stale-refresh",
+            "expires_at": 1_700_000_000_000,
+        }
+    )
+    used = []
+
+    class FakeResponse:
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+        def json(self):
+            if self.status_code >= 400:
+                return {"errorCode": "INVALID_REFRESH_TOKEN", "errorMessage": "refresh token is invalid"}
+            return {"token": "fresh-access", "refresh_token": "fresh-refresh", "expires_in": 60}
+
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            return False
+
+        async def post(self, url, **kwargs):
+            refresh = kwargs["json"]["refresh_token"]
+            used.append(refresh)
+            return FakeResponse(401 if refresh == "stale-refresh" else 200)
+
+    monkeypatch.setattr(token.httpx, "AsyncClient", FakeClient)
+    monkeypatch.setattr(
+        token,
+        "read_official_session",
+        lambda path=None: {
+            "uid": "qw-stale",
+            "access_token": "official-access",
+            "refresh_token": "official-refresh",
+            "expires_at": 1_800_000_000_000,
+        },
+    )
+    fresh = asyncio.run(token.refresh_account(db.get_account(account_id)))
+    assert used == ["stale-refresh", "official-refresh"]
+    assert fresh["access_token"] == "fresh-access"
+    assert fresh["refresh_token"] == "fresh-refresh"
 
 
 def test_provider_checkin_is_enabled():

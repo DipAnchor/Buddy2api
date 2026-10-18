@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 
 import httpx
@@ -44,6 +45,35 @@ def is_expired(account: dict) -> bool:
     return time.time() * 1000 >= expires_at
 
 
+_PROBE_RETRY_SECONDS = 0.4
+
+
+def _transport_message(exc: Exception) -> str:
+    detail = " ".join(str(exc).split())
+    name = type(exc).__name__
+    if detail and detail != name:
+        return f"{name}: {detail}"[:160]
+    return name
+
+
+async def _probe_session(session: str) -> httpx.Response:
+    last: Exception | None = None
+    for attempt in range(2):
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                return await client.get(
+                    f"{MODEL_BASE}/points/records?record_type=all&page_no=1&page_size=1",
+                    headers=model_headers(session, purpose="chat.message"),
+                )
+        except httpx.HTTPError as exc:
+            last = exc
+            if attempt == 0:
+                await asyncio.sleep(_PROBE_RETRY_SECONDS)
+                continue
+            raise LoomyAuthError(f"Loomy 保活请求失败: {_transport_message(exc)}") from exc
+    raise LoomyAuthError(f"Loomy 保活请求失败: {_transport_message(last or RuntimeError('unknown'))}")
+
+
 async def refresh_account(account: dict) -> dict:
     uid = str(account.get("uid") or "")
     local = newest_local_session(uid)
@@ -82,14 +112,7 @@ async def refresh_account(account: dict) -> dict:
             return fresh
     session = str(account.get("access_token") or "")
     if session and not is_expired(account):
-        try:
-            async with httpx.AsyncClient(timeout=20.0) as client:
-                response = await client.get(
-                    f"{MODEL_BASE}/points/records?record_type=all&page_no=1&page_size=1",
-                    headers=model_headers(session, purpose="chat.message"),
-                )
-        except httpx.HTTPError as exc:
-            raise LoomyAuthError(f"Loomy 保活请求失败: {exc}") from exc
+        response = await _probe_session(session)
         if response.status_code in {401, 403}:
             raise LoomyAuthError("Loomy 登录已失效。重新导入客户端会话，或在会话 JSON 里带上账号密码后再保活")
         if response.status_code >= 400:
