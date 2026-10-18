@@ -11,7 +11,14 @@ import providers
 import router
 from providers.protocol import UnknownChannel, UnknownModel
 from providers.qwenwork import cosy
-from providers.qwenwork.chat import build_body, envelope_error, static_headers, translate_model, unwrap_sse_payload
+from providers.qwenwork.chat import (
+    build_body,
+    envelope_error,
+    static_headers,
+    translate_model,
+    unwrap_sse_payload,
+    usage_from_payload,
+)
 from providers.qwenwork.encode import prepare_infer
 from providers.qwenwork.constants import COSY_VERSION, COSY_VERSION_FROZEN, RSA_PUBLIC_KEY_PEM, STATIC_MODELS
 from providers.qwenwork.store import parse_credentials, qwenwork_auth_dirs
@@ -176,6 +183,16 @@ def test_unwrap_outer_sse_envelope():
     assert unwrap_sse_payload("[DONE]") == []
     assert unwrap_sse_payload("{}") == []
     assert unwrap_sse_payload(inner) == [inner]
+
+
+def test_usage_is_read_from_stream_payload():
+    usage, finish = usage_from_payload(
+        '{"choices":[{"finish_reason":"tool_calls","delta":{}}],"usage":{"prompt_tokens":12,"completion_tokens":3,"total_tokens":15}}'
+    )
+    assert usage["prompt_tokens"] == 12
+    assert usage["completion_tokens"] == 3
+    assert finish == "tool_calls"
+    assert usage_from_payload("not-json") == ({}, "")
 
 
 def test_static_models_include_live_and_legacy_ids():
