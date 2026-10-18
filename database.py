@@ -403,6 +403,7 @@ def init_db():
         """)
         _migrate_accounts(conn)
         _migrate_api_keys(conn)
+        _migrate_workbuddy_regions(conn)
         _migrate_logs_provider(conn)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS api_key_daily_usage (
@@ -545,6 +546,57 @@ def _migrate_api_keys(conn: sqlite3.Connection):
         conn.execute("ALTER TABLE api_keys ADD COLUMN account_domain_filter TEXT")
 
 
+def _intl_only_filter(raw: str | None) -> bool:
+    if not raw:
+        return False
+    try:
+        patterns = json.loads(raw)
+    except (TypeError, ValueError):
+        return False
+    if not isinstance(patterns, list) or not patterns:
+        return False
+    for item in patterns:
+        text = str(item or "").strip().lower()
+        if text in {"*.workbuddy.ai", "workbuddy.ai", "www.workbuddy.ai"}:
+            continue
+        if text.endswith(".workbuddy.ai") and "*" not in text:
+            continue
+        return False
+    return True
+
+
+def _migrate_workbuddy_regions(conn: sqlite3.Connection):
+    """Move international WorkBuddy accounts and intl-only keys onto workbuddy-i."""
+    conn.execute(
+        """
+        UPDATE accounts
+           SET provider='workbuddy-i'
+         WHERE provider='workbuddy'
+           AND (
+                lower(domain)='workbuddy.ai'
+                OR lower(domain) LIKE '%.workbuddy.ai'
+           )
+        """
+    )
+    cols = {r["name"] for r in conn.execute("PRAGMA table_info(api_keys)").fetchall()}
+    if "account_domain_filter" not in cols:
+        return
+    rows = conn.execute(
+        "SELECT id, default_channel, account_domain_filter FROM api_keys"
+    ).fetchall()
+    for row in rows:
+        if str(row["default_channel"] or "") == "workbuddy" and _intl_only_filter(row["account_domain_filter"]):
+            conn.execute(
+                "UPDATE api_keys SET default_channel='workbuddy-i', account_domain_filter=NULL WHERE id=?",
+                (row["id"],),
+            )
+        elif row["account_domain_filter"]:
+            conn.execute(
+                "UPDATE api_keys SET account_domain_filter=NULL WHERE id=?",
+                (row["id"],),
+            )
+
+
 def _dedupe_accounts_provider_uid(conn: sqlite3.Connection):
     dupes = conn.execute(
         """
@@ -594,10 +646,12 @@ def _migrate_daily_usage(conn: sqlite3.Connection):
     conn.execute(
         """
         INSERT INTO api_key_daily_usage (api_key_id, usage_date, request_count)
-        SELECT api_key_id, date(created_at, 'unixepoch', 'localtime'), COUNT(*)
+        SELECT logs.api_key_id, date(logs.created_at, 'unixepoch', 'localtime'), COUNT(*)
         FROM logs
-        WHERE api_key_id IS NOT NULL AND created_at >= ?
-        GROUP BY api_key_id, date(created_at, 'unixepoch', 'localtime')
+        WHERE logs.api_key_id IS NOT NULL
+          AND logs.created_at >= ?
+          AND EXISTS (SELECT 1 FROM api_keys WHERE api_keys.id = logs.api_key_id)
+        GROUP BY logs.api_key_id, date(logs.created_at, 'unixepoch', 'localtime')
         ON CONFLICT(api_key_id, usage_date) DO UPDATE SET
             request_count=MAX(api_key_daily_usage.request_count, excluded.request_count)
         """,

@@ -48,7 +48,7 @@ def chat_url() -> str:
 
 
 def _packed_request(account: dict, raw: str, model: str) -> tuple[str, dict[str, str], str]:
-    from providers.qwenwork.encode import prepare_infer
+    from providers.qwenwork.encode import EncodeError, prepare_infer
 
     uid, name, email, token = _ids(account)
     extra = account.get("extra") if isinstance(account.get("extra"), dict) else {}
@@ -457,7 +457,7 @@ async def chat_completions(payload: dict, api_key_info: dict | None) -> tuple:
                 200, "", t0,
             )
             return ("json", aggregated)
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, EncodeError) as exc:
             auth_manager.mark_account_failure(account["id"], 503)
             last_error = ("error", (503, {"error": {"message": str(exc)[:240], "type": "server_error"}}))
             continue
@@ -520,7 +520,7 @@ async def _stream(raw: str, request_id: str, upstream_model: str, api_key_info, 
                 yield b"data: [DONE]\n\n"
             _log(api_key_info, account, model_name, True, 0, 0, 0, "stop", 200, "", t0)
             return
-        except httpx.HTTPError as exc:
+        except (httpx.HTTPError, EncodeError) as exc:
             if output_started:
                 return
             auth_manager.mark_account_failure(account["id"], 503)

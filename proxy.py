@@ -865,29 +865,18 @@ def _sse_from_chat_completion(result: dict) -> list[bytes]:
     return [_json_sse_event(item) for item in chunks] + [b"data: [DONE]\n\n"]
 
 
-def _account_domain_filter(api_key_info: Optional[dict]) -> Optional[list]:
-    """API-key scoped account domain patterns (e.g. ["*.workbuddy.ai"]); None -> no filter."""
-    if not isinstance(api_key_info, dict):
-        return None
-    value = api_key_info.get("account_domain_filter")
-    if isinstance(value, list) and value:
-        return value
-    return None
-
-
 async def _json_chat_with_stall_retry(
     body: dict,
     api_key_info: Optional[dict],
     model_name: str,
+    provider: str = "workbuddy",
 ) -> tuple:
     tried_ids: set[int] = set()
     max_retries = 3
     last_error = None
 
     for attempt in range(max_retries):
-        account = await auth_manager.pick_account_with_fallback(
-            tried_ids, domain_filter=_account_domain_filter(api_key_info)
-        )
+        account = await auth_manager.pick_account_with_fallback(tried_ids, provider=provider)
         if not account:
             break
 
@@ -974,8 +963,9 @@ async def _stream_collected_with_stall_retry(
     body: dict,
     api_key_info: Optional[dict],
     model_name: str,
+    provider: str = "workbuddy",
 ) -> AsyncGenerator[bytes, None]:
-    result = await _json_chat_with_stall_retry(body, api_key_info, model_name)
+    result = await _json_chat_with_stall_retry(body, api_key_info, model_name, provider)
     if result[0] == "error":
         status, detail = result[1]
         if isinstance(detail, dict):
@@ -992,6 +982,7 @@ async def proxy_chat_completions(
     payload: dict,
     api_key_info: Optional[dict] = None,
     log_model: Optional[str] = None,
+    provider: str = "workbuddy",
 ) -> tuple:
     """
     主代理函数。
@@ -1011,11 +1002,11 @@ async def proxy_chat_completions(
         if TOOL_STALL_RETRY and _request_has_tool_loop(body):
             return (
                 "stream",
-                _stream_collected_with_stall_retry(body, api_key_info, model_name),
+                _stream_collected_with_stall_retry(body, api_key_info, model_name, provider),
             )
         return (
             "stream",
-            _stream_upstream(body, api_key_info, model_name),
+            _stream_upstream(body, api_key_info, model_name, provider),
         )
 
     return await _json_chat_with_stall_retry(body, api_key_info, model_name)
@@ -1072,6 +1063,7 @@ async def _stream_upstream(
     body: dict,
     api_key_info: Optional[dict],
     model_name: str,
+    provider: str = "workbuddy",
 ) -> AsyncGenerator[bytes, None]:
     """Stream upstream SSE with pre-output account failover and backoff."""
     tried_ids: set[int] = set()
@@ -1084,9 +1076,7 @@ async def _stream_upstream(
     pending_retry_log: dict | None = None
 
     for attempt in range(3):
-        account = await auth_manager.pick_account_with_fallback(
-            tried_ids, domain_filter=_account_domain_filter(api_key_info)
-        )
+        account = await auth_manager.pick_account_with_fallback(tried_ids, provider=provider)
         if not account:
             break
         if pending_retry_log is not None:

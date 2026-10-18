@@ -11,6 +11,7 @@ import router
 from providers.protocol import UnknownModel
 from providers.traework.chat import (
     _stream_once,
+    conversation_prompt,
     extract_assistant_text,
     extract_assistant_turn,
     translate_model,
@@ -41,7 +42,10 @@ def test_traework_in_default_registry(monkeypatch):
     monkeypatch.delenv("CB_GATEWAY_PROVIDERS", raising=False)
     assert providers.enabled_provider_ids() == [
         "workbuddy",
+        "workbuddy-i",
         "qwenwork",
+        "qoder",
+        "qoder-i",
         "traework",
         "loomy",
         "xiaohuanxiong",
@@ -123,6 +127,76 @@ def test_parse_supplier_models_official_grouped_list():
 
 def test_translate_auto():
     assert translate_model("auto") == "qwen-3.7-plus"
+
+
+def test_llm_body_renames_tool_calls_and_stringifies_parameters():
+    from providers.traework.llm_chat import build_llm_body
+
+    body = build_llm_body(
+        {
+            "model": "traework/glm-5.3-flash",
+            "messages": [
+                {"role": "developer", "content": "be brief"},
+                {"role": "user", "content": "read a.txt"},
+                {
+                    "role": "assistant",
+                    "content": "",
+                    "tool_calls": [{"id": "call-1", "function": {"name": "read_file", "arguments": "{\"path\":\"a.txt\"}"}}],
+                },
+                {"role": "tool", "tool_call_id": "call-1", "content": "hello"},
+                {"role": "tool", "tool_call_id": "missing", "content": "drop me"},
+            ],
+            "tools": [{"type": "function", "function": {"name": "read_file", "parameters": {"type": "object"}}}],
+            "tool_choice": {"type": "auto"},
+        },
+        "glm-5.3-flash",
+    )
+    assert body["function"] == "solo_work_lite"
+    assert body["config_name"] == "glm-5.3-flash"
+    assert body["tool_choice"] == "auto"
+    assert body["tools"][0]["function"]["parameters"] == '{"type":"object"}'
+    roles = [item["role"] for item in body["messages"]]
+    assert roles == ["system", "user", "assistant", "tool"]
+    assert "function_call" in body["messages"][2]["tool_calls"][0]
+    assert "function" not in body["messages"][2]["tool_calls"][0]
+    assert body["messages"][3]["content"] == [{"type": "text", "text": "hello"}]
+
+
+def test_llm_output_event_restores_function_field():
+    from providers.traework.llm_chat import parse_event
+
+    parsed = parse_event(
+        "output",
+        json.dumps({"response": "查一下", "tool_calls": [{"index": 0, "id": "call-1", "function_call": {"name": "read_file", "arguments": "{}", "namespace": "solo"}}]}),
+    )
+    assert parsed["text"] == "查一下"
+    assert parsed["tool_calls"][0]["function"]["name"] == "read_file"
+    assert "namespace" not in parsed["tool_calls"][0]["function"]
+
+
+def test_conversation_prompt_keeps_a_single_user_turn():
+    assert conversation_prompt({"messages": [{"role": "user", "content": "hi"}]}) == "hi"
+
+
+def test_conversation_prompt_includes_prior_turns_and_tool_results():
+    prompt = conversation_prompt({
+        "messages": [
+            {"role": "system", "content": "你在 E:\\test-project 工作"},
+            {"role": "user", "content": "测试写入"},
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "我先写一个测试文件。"}],
+                "tool_calls": [{"function": {"name": "write_file", "arguments": "{\"path\":\"a.txt\"}"}}],
+            },
+            {"role": "tool", "name": "write_file", "content": "created=true"},
+            {"role": "user", "content": "继续"},
+        ]
+    })
+    assert "E:\\test-project" in prompt
+    assert "测试写入" in prompt
+    assert "write_file" in prompt
+    assert "created=true" in prompt
+    assert prompt.rstrip().endswith("继续")
 
 
 def test_extract_assistant_text_from_task():
