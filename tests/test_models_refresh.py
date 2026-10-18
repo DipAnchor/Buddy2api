@@ -46,6 +46,20 @@ def test_capacity_survives_supplier_catalog_and_public_listing(channel, isolated
         assert prefixed["context_window"] == item["context_window"]
 
 
+def test_public_models_omit_channels_without_login(monkeypatch):
+    monkeypatch.setattr(server.db, "list_accounts", lambda provider=None: [
+        {"provider": "qoder", "access_token": "dt-present"},
+        {"provider": "workbuddy-i", "access_token": ""},
+    ])
+    monkeypatch.setattr(server, "collect_v1_models", lambda: [
+        {"id": "qoder/Auto", "channel": "qoder"},
+        {"id": "qoder-i/Auto", "channel": "qoder-i"},
+        {"id": "workbuddy-i/glm-5.2", "channel": "workbuddy-i"},
+        {"id": "glm-5.2", "channel": "workbuddy"},
+    ])
+    assert {item["id"] for item in server.public_v1_models()} == {"qoder/Auto"}
+
+
 def test_all_channels_publish_capacity_defaults_without_persisting_guesses(isolated_db, all_channels):
     import catalog
 

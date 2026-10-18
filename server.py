@@ -418,6 +418,20 @@ def collect_v1_models() -> list[dict]:
     return data
 
 
+def channels_with_login() -> set[str]:
+    found = set()
+    for account in db.list_accounts():
+        if str(account.get("access_token") or "").strip():
+            found.add(str(account.get("provider") or ""))
+    return found
+
+
+def public_v1_models() -> list[dict]:
+    """Client catalog. A channel with no stored login is omitted."""
+    present = channels_with_login()
+    return [item for item in collect_v1_models() if item.get("channel") in present]
+
+
 @app.get("/v1/models")
 async def list_models(
     authorization: str | None = Header(default=None),
@@ -426,7 +440,7 @@ async def list_models(
     await run_in_threadpool(
         lambda: _check_client_auth(authorization, x_api_key, consume_quota=False)
     )
-    return {"object": "list", "data": collect_v1_models()}
+    return {"object": "list", "data": public_v1_models()}
 
 
 @app.post("/v1/chat/completions")
@@ -766,9 +780,11 @@ async def admin_workbuddy_login_start(
     authorization: str | None = Header(default=None),
 ):
     _check_admin(authorization)
-    provider = _workbuddy_provider()
     data = await _read_json_object(request, allow_empty=True)
     realm = str((data or {}).get("realm") or "cn").strip().lower()
+    provider = providers.get_provider("workbuddy-i" if realm == "global" else "workbuddy")
+    if provider is None:
+        raise HTTPException(status_code=400, detail="WorkBuddy channel is not enabled")
     if realm not in {"cn", "global"}:
         raise HTTPException(status_code=400, detail="realm must be cn or global")
     try:
@@ -886,7 +902,7 @@ async def admin_account_resources(
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
     channel = str(account.get("provider") or "workbuddy")
-    if channel != "workbuddy":
+    if channel not in {"workbuddy", "workbuddy-i"}:
         provider = providers.get_provider(channel)
         if provider is None:
             raise HTTPException(status_code=400, detail=f"Channel '{channel}' is not enabled")
@@ -908,6 +924,7 @@ async def admin_account_resources(
         remaining = getattr(snapshot, "remaining", None)
         unsupported = bool(getattr(snapshot, "unsupported", False))
         credit_remaining = remaining if unit == "credit" and not unsupported else None
+        packages = extra.get("packages") if isinstance(extra.get("packages"), list) else []
         return {
             "ok": bool(getattr(snapshot, "ok", False)),
             "account_id": aid,
@@ -919,7 +936,7 @@ async def admin_account_resources(
             "available_total": credit_remaining,
             "unsupported": unsupported,
             "message": getattr(snapshot, "message", "") or "",
-            "packages": [],
+            "packages": packages,
         }
     return await auth_manager.fetch_account_resources(account, force=bool(force))
 
@@ -1019,17 +1036,11 @@ async def admin_create_key(
     if "default_channel" not in data or data.get("default_channel") in (None, ""):
         raise HTTPException(status_code=400, detail="default_channel is required")
     default_channel = _validate_key_channel(data.get("default_channel"))
-    domain_filter = _validate_account_domain_filter(data.get("account_domain_filter"))
-    # 生成 sk- 前缀的 key
     key = f"sk-cb-{secrets.token_urlsafe(32)}"
     kid = db.add_api_key(
         key, name, allowed, daily_limit, client_type, default_channel=default_channel,
-        account_domain_filter=domain_filter,
     )
-    return {
-        "id": kid, "key": key, "status": "ok", "default_channel": default_channel,
-        "account_domain_filter": domain_filter,
-    }
+    return {"id": kid, "key": key, "status": "ok", "default_channel": default_channel}
 
 
 @app.put("/admin/api-keys/{kid}")
@@ -1056,8 +1067,7 @@ async def admin_update_key(
         and (not isinstance(data["allowed_models"], list) or not all(isinstance(model, str) for model in data["allowed_models"]))
     ):
         raise HTTPException(status_code=400, detail="allowed_models must be an array of strings")
-    if "account_domain_filter" in data:
-        data["account_domain_filter"] = _validate_account_domain_filter(data.get("account_domain_filter"))
+    data.pop("account_domain_filter", None)
     db.update_api_key(kid, data)
     return {"status": "ok"}
 

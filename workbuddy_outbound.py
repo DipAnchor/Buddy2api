@@ -273,7 +273,7 @@ def _assistant_call_ids(message) -> list[str]:
 def _tool_id(message) -> str:
     if not isinstance(message, dict) or message.get("role") != "tool":
         return ""
-    return str(message.get("tool_call_id") or "")
+    return str(message.get("tool_call_id") or message.get("toolCallId") or "")
 
 
 def _thinking_on(body: dict) -> bool:

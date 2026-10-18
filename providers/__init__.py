@@ -1,4 +1,4 @@
-"""Channel registry. WorkBuddy, QwenWork, TraeWork, Loomy, and Xiaohuanxiong are enabled by default."""
+"""Channel registry. WorkBuddy, QwenWork, Qoder, TraeWork, Loomy, and Xiaohuanxiong are enabled by default."""
 
 from __future__ import annotations
 
@@ -13,14 +13,20 @@ from providers.protocol import (
     Provider,
 )
 from providers.loomy import PROVIDER as LOOMY_PROVIDER
+from providers.qoder import CN as QODER_PROVIDER
+from providers.qoder import INTL as QODER_I_PROVIDER
 from providers.qwenwork import PROVIDER as QWENWORK_PROVIDER
 from providers.traework import PROVIDER as TRAEWORK_PROVIDER
+from providers.workbuddy import INTL as WORKBUDDY_I_PROVIDER
 from providers.workbuddy import PROVIDER as WORKBUDDY_PROVIDER
 from providers.xiaohuanxiong import PROVIDER as XIAOHUANXIONG_PROVIDER
 
 DEFAULT_PROVIDER_IDS: tuple[str, ...] = (
     "workbuddy",
+    "workbuddy-i",
     "qwenwork",
+    "qoder",
+    "qoder-i",
     "traework",
     "loomy",
     "xiaohuanxiong",
@@ -28,7 +34,10 @@ DEFAULT_PROVIDER_IDS: tuple[str, ...] = (
 
 _LOADED: dict[str, Provider] = {
     "workbuddy": WORKBUDDY_PROVIDER,
+    "workbuddy-i": WORKBUDDY_I_PROVIDER,
     "qwenwork": QWENWORK_PROVIDER,
+    "qoder": QODER_PROVIDER,
+    "qoder-i": QODER_I_PROVIDER,
     "traework": TRAEWORK_PROVIDER,
     "loomy": LOOMY_PROVIDER,
     "xiaohuanxiong": XIAOHUANXIONG_PROVIDER,

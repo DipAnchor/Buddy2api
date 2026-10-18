@@ -7,9 +7,12 @@ from typing import Literal, Protocol, runtime_checkable
 
 ChannelId = Literal[
     "workbuddy",
+    "workbuddy-i",
     "qclaw",
     "qwenwork",
     "qoderwork",
+    "qoder",
+    "qoder-i",
     "traework",
     "loomy",
     "xiaohuanxiong",
@@ -17,9 +20,12 @@ ChannelId = Literal[
 
 KNOWN_CHANNEL_IDS: tuple[ChannelId, ...] = (
     "workbuddy",
+    "workbuddy-i",
     "qclaw",
     "qwenwork",
     "qoderwork",
+    "qoder",
+    "qoder-i",
     "traework",
     "loomy",
     "xiaohuanxiong",

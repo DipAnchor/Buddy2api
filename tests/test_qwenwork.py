@@ -39,7 +39,10 @@ def test_qwenwork_in_default_registry(monkeypatch):
     monkeypatch.delenv("CB_GATEWAY_PROVIDERS", raising=False)
     assert providers.enabled_provider_ids() == [
         "workbuddy",
+        "workbuddy-i",
         "qwenwork",
+        "qoder",
+        "qoder-i",
         "traework",
         "loomy",
         "xiaohuanxiong",
