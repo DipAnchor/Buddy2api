@@ -4,7 +4,7 @@
 
 > 把本机已经登录的消费级 AI 客户端，接成 OpenAI 兼容接口，给 Codex、OpenCode、Cherry Studio、NextChat 等用。默认打开 Work Buddy / CodeBuddy、千问办公（QwenWork）、TraeWork、讯飞 Loomy、商汤小浣熊五个通道；管理页下拉选其中一个。一次请求只走一个通道。QClaw 已停止运营，通道已下架，积分请改用 WorkBuddy。
 
-当前版本 **2.2.2**。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
+当前版本 **2.2.3**。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
 
 **仅限自己的账号。严禁使用接码平台、批量注册或任何批量方式薅羊毛。** 不要把网关公开给别人用，也不要代领或倒卖额度。
 
@@ -106,7 +106,7 @@ python server.py
 
 本机管理页自动授权，不用粘贴 Token，也不依赖管理 Cookie。
 
-1. 打开「账号」。WorkBuddy 可以点「浏览器登录」，在官方页面登录后自动入库，国内和国际站都能选。也可以点「一键导入全部通道」读取各启用通道的默认登录目录；自定义路径仅用于当前通道。未登录的通道会跳过。已入库的号用「一键保活」续期并领取今日积分；只想领取时用「一键领取今日积分」。定时保活和定时领取在设置页，默认关闭，要手动打开并保存。
+1. 打开「账号」。WorkBuddy 可以点「浏览器登录」，在官方页面登录后自动入库，国内和国际站都能选。也可以点「一键导入全部通道」读取各启用通道的默认登录目录；自定义路径仅用于当前通道。未登录的通道会跳过。已入库的号用「一键续期并领取」续期并领取今日积分；只想领取时用「一键领取今日积分」。单个账号可在行菜单点「续期」。定时续期和定时领取在设置页，默认关闭，要手动打开并保存。
 2. 点该账号的「测试」，能返回一句话就说明这条通道通了。
 3. 打开「API Keys」，选择通道后创建。要一把 Key 打多家时选自动通道，模型写成 `通道/模型`。Codex 接口用 `/v1/responses`。创建后可以再显示、复制完整 Key。
 4. 在客户端里填：
@@ -241,9 +241,9 @@ QwenWork、TraeWork、Loomy、小浣熊各用自己那把 Key，不要混用。�
 |---|---|
 | `CB_GATEWAY_PROVIDERS` | 启用哪些通道，逗号分隔。默认 `workbuddy,qwenwork,traework,loomy,xiaohuanxiong`。`qclaw` 已下架，写了也会忽略。只想留一家时再改 |
 | `CB_GATEWAY_AUTO_IMPORT` | 设 `1` 则启动时自动导入。默认 `0` |
-| `CB_GATEWAY_CHECKIN_GAP_MS` | 一键领取和一键保活的账号间隔，默认 `800` |
-| `CB_GATEWAY_KEEPALIVE` | 设 `1` 强制打开定时保活，设 `0` 强制关闭。不设时跟随设置页，默认关闭 |
-| `CB_GATEWAY_KEEPALIVE_HOUR` | 定时保活的本地小时，默认 `22`。只在该小时前 10 分钟执行 |
+| `CB_GATEWAY_CHECKIN_GAP_MS` | 一键领取和一键续期并领取的账号间隔，默认 `800` |
+| `CB_GATEWAY_KEEPALIVE` | 设 `1` 强制打开定时续期，设 `0` 强制关闭。不设时跟随设置页，默认关闭 |
+| `CB_GATEWAY_KEEPALIVE_HOUR` | 定时续期的本地小时，默认 `22`。只在该小时前 10 分钟执行 |
 | `CB_GATEWAY_AUTO_CHECKIN` | 设 `1` 强制打开定时领取，设 `0` 强制关闭。不设时跟随设置页，默认关闭 |
 | `CB_GATEWAY_AUTO_CHECKIN_HOUR` | 定时领取的本地小时，默认 `9` |
 | `CB_GATEWAY_DEFAULT_REASONING_EFFORT` | WorkBuddy DeepSeek V4 Pro/Flash 的默认思考强度，支持 `low` / `high` / `max`，默认 `high`；设为 `off` 可关闭默认值。Responses 的 `reasoning.effort` 或 Chat Completions 的 `reasoning_effort` 会覆盖它 |
