@@ -2,7 +2,7 @@
 
 [English](README_EN.md) | 中文
 
-> 把本机已经登录的消费级 AI 客户端，接成 OpenAI 兼容接口，给 Codex、OpenCode、Cherry Studio、NextChat 等用。默认打开 Work Buddy / CodeBuddy、千问办公（QwenWork）、TraeWork、讯飞 Loomy、商汤小浣熊五个通道；管理页下拉选其中一个。一次请求只走一个通道。QClaw 已停止运营，通道已下架，积分请改用 WorkBuddy。
+> 把本机已经登录的消费级 AI 客户端，接成 OpenAI 兼容接口，给 Codex、OpenCode、Cherry Studio、NextChat 等用。默认打开 Work Buddy / CodeBuddy、Qoder、千问办公（QwenWork）、TraeWork、讯飞 Loomy、商汤小浣熊；管理页下拉选其中一个。一次请求只走一个通道。QClaw 已停止运营，通道已下架，积分请改用 WorkBuddy。
 
 当前版本 **2.2.4**。默认通道含 WorkBuddy 国内/国际、Qoder 中国/国际、千问办公、TraeWork、Loomy、小浣熊。没有登录凭证的渠道不会出现在模型列表里。这个项目只供你本人持有的账号在本机使用。不要公开部署，也不要把登录凭据、API Key、数据库文件发给别人。
 
@@ -16,6 +16,8 @@ Buddy2api 在本机提供 `http://127.0.0.1:8787/v1`。你在官方客户端里�
 
 默认通道都开。没装、没登录的通道，账号页检测为空，不会自动入库，模型列表也不会出现它们的模型名。QClaw 已下架，环境变量里的 `qclaw` 会被忽略。
 
+Qoder 中国版读 `%APPDATA%\com.qodercn.app.stable\auth.v1.dat`，国际版读 `%APPDATA%\com.qoder.app.stable\auth.v1.dat`。两边的登录文件、模型目录和令牌不共用。额度在领取结果和官方余额里看。工具调用交回本机客户端。
+
 讯飞 Loomy 读本机 `auth-session.json`。每日额度由上游自动发放，一键领取只核对到账余额；长对话发送前按 16 万 token 预算裁旧历史。商汤小浣熊读本机 `auth.json`，一键领取会触发每日发放。两家都用自己的请求头，不走 WorkBuddy 的 CLI 指纹。
 
 ```powershell
@@ -24,20 +26,23 @@ python server.py
 
 | 通道 | 默认 | 本机登录位置 |
 |---|---|---|
-| WorkBuddy / CodeBuddy | 开 | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth` |
+| WorkBuddy / CodeBuddy 国内 | 开 | `%LOCALAPPDATA%\CodeBuddyExtension\Data\Public\auth` |
+| WorkBuddy 国际 | 开 | 同上，域名是 `*.workbuddy.ai` 的账号会归到 `workbuddy-i` |
+| Qoder 中国 | 开 | `%APPDATA%\com.qodercn.app.stable\auth.v1.dat` |
+| Qoder 国际 | 开 | `%APPDATA%\com.qoder.app.stable\auth.v1.dat` |
 | 千问办公 QwenWork | 开 | `%APPDATA%\QwenWorkCN` |
 | TraeWork | 开 | `%APPDATA%\TRAE SOLO CN\User\globalStorage` |
 | 讯飞 Loomy | 开 | `%PUBLIC%\Loomy\*\userData\auth-session.json` |
 | 商汤小浣熊 | 开 | `%USERPROFILE%\.box-agent\config\auth.json` |
 
-路径不对时可用 `CB_AUTH_DIR`、`CB_QWENWORK_AUTH_DIR`、`CB_TRAEWORK_AUTH_DIR`、`CB_LOOMY_AUTH_DIR`、`CB_XHX_AUTH_DIR` 指定。各通道的登录文件不要混在同一个目录。只要其中一家时，可设 `CB_GATEWAY_PROVIDERS=workbuddy` 收窄。
+路径不对时可用 `CB_AUTH_DIR`、`CB_QODER_USER_DATA_DIR`、`CB_QODER_I_USER_DATA_DIR`、`CB_QWENWORK_AUTH_DIR`、`CB_TRAEWORK_AUTH_DIR`、`CB_LOOMY_AUTH_DIR`、`CB_XHX_AUTH_DIR` 指定。各通道的登录文件不要混在同一个目录。只要其中一家时，可设 `CB_GATEWAY_PROVIDERS=workbuddy` 收窄。
 
 ## 注意事项
 
 按下面「安装与启动」即可。这几条是 2.0 里最容易踩空的：
 
-1. **启动后账号页是空的，这是正常的。** 默认不再自动入库。到「账号」页：选通道 → 重新检测 → 一键导入。五个通道都能选。
-2. **一把 API Key 只打一个通道。** 创建时必须选通道。WorkBuddy 的 Key 发 `auto` / `glm-5.2`；QwenWork 的 Key 发 `auto` 或 `qwork-advanced`；TraeWork 的 Key 发 `auto` 或 `qwen-3.7-plus`。通道和模型对不上会 400 或 403，不会帮你转到另一家。
+1. **启动后账号页是空的，这是正常的。** 默认不再自动入库。到「账号」页：选通道 → 重新检测 → 一键导入。已启用的通道都能选。没有登录文件的通道不会出现在模型列表里。
+2. **一把 API Key 只打一个通道。** 创建时必须选通道。WorkBuddy 的 Key 发 `auto` / `glm-5.2`；Qoder 的 Key 发 `auto` 或 `Qwen3.8-Flash`；QwenWork 的 Key 发 `auto` 或 `qwork-advanced`；TraeWork 的 Key 发 `auto` 或 `qwen-3.7-plus`。通道和模型对不上会 400 或 403，不会帮你转到另一家。自动通道用 `qoder/DeepSeek-Flash` 这类带前缀的名字指定这一跳。
 3. **某个通道返回 503 `channel_unavailable`：** 这个通道还没导入可用账号。
 4. **QwenWork 请在 Windows 上直接跑 `python server.py`。** Linux Docker 读不了它用 DPAPI 加密的本机文件；管理页会写明这一点。WorkBuddy 可以继续用 Docker。
 5. 本项目和聊天客户端最好在同一台电脑。客户端如果跑在 Docker 里，Base URL 填 `http://host.docker.internal:8787/v1`，不要填容器自己的 `127.0.0.1`。
@@ -112,7 +117,7 @@ python server.py
 4. 在客户端里填：
    - Base URL：`http://127.0.0.1:8787/v1`
    - API Key：刚复制的 Key
-   - 模型：WorkBuddy、Loomy、小浣熊用 `auto`；千问办公用 `auto` 或 `qwork-advanced`；TraeWork 用 `auto` 或 `qwen-3.7-plus`。上游加了新模型时，到「模型配置」点「一键读取供应模型」；各通道目录分开保存，选错通道仍会 400/403。Loomy 的每日额度由上游自动发放，一键领取会读到账余额。小浣熊的一键领取会触发每日发放。
+   - 模型：WorkBuddy、Loomy、小浣熊用 `auto`；Qoder 用 `auto` 或 `Qwen3.8-Flash`；千问办公用 `auto` 或 `qwork-advanced`；TraeWork 用 `auto` 或 `qwen-3.7-plus`。上游加了新模型时，到「模型配置」点「一键读取供应模型」；各通道目录分开保存，选错通道仍会 400/403。Qoder 的额度在领取结果和官方余额里看。Loomy 的每日额度由上游自动发放，一键领取会读到账余额。小浣熊的一键领取会触发每日发放。
 
 管理页打不开或要远程访问时：
 
@@ -161,7 +166,7 @@ python server.py
 |---|---|
 | Base URL | `http://127.0.0.1:8787/v1` |
 | API Key | 管理页创建，已绑定通道 |
-| 模型 | WorkBuddy：`auto` / `glm-5.2`。QwenWork：`auto` 或 `qwork-advanced`。TraeWork：`auto` 或 `qwen-3.7-plus`。Loomy、小浣熊：`auto` |
+| 模型 | WorkBuddy：`auto` / `glm-5.2`。Qoder：`auto` 或 `Qwen3.8-Flash`。QwenWork：`auto` 或 `qwork-advanced`。TraeWork：`auto` 或 `qwen-3.7-plus`。Loomy、小浣熊：`auto` |
 | Stream | 建议开 |
 
 接口：`/v1/chat/completions`、`/v1/responses`、`/v1/models`。绑死一家的 Key，没加前缀的 `auto` 走那一家。自动通道的 Key，带前缀的模型打到对应通道；`auto` 走第一个已有账号的通道。额度用尽不会换到另一家。
@@ -239,7 +244,7 @@ QwenWork、TraeWork、Loomy、小浣熊各用自己那把 Key，不要混用。�
 
 | 变量 | 说明 |
 |---|---|
-| `CB_GATEWAY_PROVIDERS` | 启用哪些通道，逗号分隔。默认 `workbuddy,qwenwork,traework,loomy,xiaohuanxiong`。`qclaw` 已下架，写了也会忽略。只想留一家时再改 |
+| `CB_GATEWAY_PROVIDERS` | 启用哪些通道，逗号分隔。默认 `workbuddy,workbuddy-i,qwenwork,qoder,qoder-i,traework,loomy,xiaohuanxiong`。`qclaw` 已下架，写了也会忽略。只想留一家时再改 |
 | `CB_GATEWAY_AUTO_IMPORT` | 设 `1` 则启动时自动导入。默认 `0` |
 | `CB_GATEWAY_CHECKIN_GAP_MS` | 一键领取和一键续期并领取的账号间隔，默认 `800` |
 | `CB_GATEWAY_KEEPALIVE` | 设 `1` 强制打开定时续期，设 `0` 强制关闭。不设时跟随设置页，默认关闭 |
@@ -248,6 +253,8 @@ QwenWork、TraeWork、Loomy、小浣熊各用自己那把 Key，不要混用。�
 | `CB_GATEWAY_AUTO_CHECKIN_HOUR` | 定时领取的本地小时，默认 `9` |
 | `CB_GATEWAY_DEFAULT_REASONING_EFFORT` | WorkBuddy DeepSeek V4 Pro/Flash 的默认思考强度，支持 `low` / `high` / `max`，默认 `high`；设为 `off` 可关闭默认值。Responses 的 `reasoning.effort` 或 Chat Completions 的 `reasoning_effort` 会覆盖它 |
 | `CB_AUTH_DIR` | WorkBuddy 登录目录 |
+| `CB_QODER_USER_DATA_DIR` | Qoder 中国版用户数据目录，下面应有 `auth.v1.dat` |
+| `CB_QODER_I_USER_DATA_DIR` | Qoder 国际版用户数据目录，下面应有 `auth.v1.dat` |
 | `CB_QWENWORK_AUTH_DIR` | QwenWork 登录目录 |
 | `CB_TRAEWORK_AUTH_DIR` | TraeWork `storage.json` 所在目录 |
 | `CB_LOOMY_AUTH_DIR` | Loomy 数据根目录，下面应有 `*/userData/auth-session.json` |
