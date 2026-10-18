@@ -290,6 +290,20 @@ def envelope_error(raw: str) -> str | None:
     return None
 
 
+def usage_from_payload(raw: str) -> tuple[dict, str]:
+    try:
+        item = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}, ""
+    if not isinstance(item, dict):
+        return {}, ""
+    usage = item.get("usage") if isinstance(item.get("usage"), dict) else {}
+    choices = item.get("choices") if isinstance(item.get("choices"), list) else []
+    choice = choices[0] if choices and isinstance(choices[0], dict) else {}
+    finish = str(choice.get("finish_reason") or "")
+    return usage, finish
+
+
 def unwrap_sse_payload(raw: str) -> list[str]:
     """Peel the QwenWork outer envelope; return inner OpenAI SSE data payloads."""
     text = raw.strip()
@@ -485,6 +499,8 @@ async def _stream(raw: str, request_id: str, upstream_model: str, api_key_info, 
         tried.add(account["id"])
         t0 = time.time()
         output_started = False
+        usage: dict = {}
+        finish = "stop"
         try:
             url, headers, packed = _packed_request(account, raw, upstream_model)
             async with httpx.AsyncClient(timeout=None) as client:
@@ -513,12 +529,25 @@ async def _stream(raw: str, request_id: str, upstream_model: str, api_key_info, 
                                 yield last_error
                             _log(api_key_info, account, model_name, True, 0, 0, 0, "error", 400, env_err, t0)
                             return
+                        outer_usage, outer_finish = usage_from_payload(data)
+                        if outer_usage:
+                            usage = outer_usage
+                        if outer_finish:
+                            finish = outer_finish
                         for inner in unwrap_sse_payload(data):
+                            inner_usage, inner_finish = usage_from_payload(inner)
+                            if inner_usage:
+                                usage = inner_usage
+                            if inner_finish:
+                                finish = inner_finish
                             output_started = True
                             yield f"data: {inner}\n\n".encode("utf-8")
             if output_started:
                 yield b"data: [DONE]\n\n"
-            _log(api_key_info, account, model_name, True, 0, 0, 0, "stop", 200, "", t0)
+            prompt_t = int(usage.get("prompt_tokens") or 0)
+            completion_t = int(usage.get("completion_tokens") or 0)
+            total_t = int(usage.get("total_tokens") or (prompt_t + completion_t))
+            _log(api_key_info, account, model_name, True, prompt_t, completion_t, total_t, finish, 200, "", t0)
             return
         except (httpx.HTTPError, EncodeError) as exc:
             if output_started:
