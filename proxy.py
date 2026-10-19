@@ -1009,7 +1009,7 @@ async def proxy_chat_completions(
             _stream_upstream(body, api_key_info, model_name, provider),
         )
 
-    return await _json_chat_with_stall_retry(body, api_key_info, model_name)
+    return await _json_chat_with_stall_retry(body, api_key_info, model_name, provider)
 
 
 async def test_account_chat(account: dict, model: str = "auto", prompt: str = "ping") -> dict:
