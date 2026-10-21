@@ -322,7 +322,7 @@ def test_daily_credit_notice_unwraps_adapter_payload():
     assert parse_daily_credit_notice({"data": {"should_show": True, "credits": 1.5}})["credits"] == 0
 
 
-def test_claim_posts_daily_credit_notice_and_status_keeps_it(isolated_db, monkeypatch):
+def test_claim_reads_same_day_wallet_and_status_keeps_it(isolated_db, monkeypatch):
     from providers.qwenwork import checkin
 
     account_id = db.add_account(
@@ -341,7 +341,16 @@ def test_claim_posts_daily_credit_notice_and_status_keeps_it(isolated_db, monkey
         status_code = 200
 
         def json(self):
-            return {"data": {"should_show": True, "credits": 100}}
+            return {
+                "data": {
+                    "active_wallets": {
+                        "wallets": [
+                            {"balance": 99.5, "valid_to": checkin._next_shanghai_midnight().isoformat()},
+                            {"balance": 2000, "valid_to": "2026-11-18T22:09:24+08:00"},
+                        ]
+                    }
+                }
+            }
 
     class FakeClient:
         def __init__(self, *args, **kwargs):
@@ -354,26 +363,29 @@ def test_claim_posts_daily_credit_notice_and_status_keeps_it(isolated_db, monkey
             return False
 
         async def post(self, url, **kwargs):
-            calls.append((url, kwargs["headers"], kwargs.get("json"), kwargs.get("content")))
+            raise AssertionError(f"claim must not POST {url}")
+
+        async def get(self, url, **kwargs):
+            calls.append((url, kwargs["headers"]))
             return FakeResponse()
 
     monkeypatch.setattr(checkin.httpx, "AsyncClient", FakeClient)
     result = asyncio.run(checkin.claim_checkin(account))
     assert result["ok"] is True
-    assert result["claimed"] is True
-    assert result["credit"] == 100
-    assert calls[0][0].endswith("/api/v1/adapter/user/daily-credit-notice/claim")
+    assert result["claimed"] is False
+    assert result["already_claimed"] is True
+    assert result["credit"] == 99.5
+    assert result["message"] == "今日每日积分已到账 99.5"
+    assert calls[0][0].endswith("/api/v1/adapter/user/wallets")
+    assert "daily-credit-notice" not in calls[0][0]
     assert calls[0][1]["Authorization"] == "Bearer device-token"
     assert calls[0][1]["X-QwenWork-App-Mode"] == "standard"
     assert calls[0][1]["X-QwenWork-Version"] == "1.3.1"
-    assert "Content-Type" not in calls[0][1]
-    assert calls[0][2] is None
-    assert calls[0][3] is None
 
     status = asyncio.run(checkin.fetch_checkin(account))
     assert status["already_claimed"] is True
     assert status["claimed"] is False
-    assert status["credit"] == 100
+    assert status["credit"] == 99.5
     assert len(calls) == 1
 
 
@@ -411,8 +423,9 @@ def test_claim_refreshes_once_after_unauthorized(isolated_db, monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-        async def post(self, url, **kwargs):
+        async def get(self, url, **kwargs):
             posts["n"] += 1
+            assert "daily-credit-notice" not in url
             if posts["n"] == 1:
                 assert kwargs["headers"]["Authorization"] == "Bearer old"
                 return FakeResponse(401)
@@ -427,8 +440,10 @@ def test_claim_refreshes_once_after_unauthorized(isolated_db, monkeypatch):
     result = asyncio.run(checkin.claim_checkin(account))
     assert posts["n"] == 2
     assert result["ok"] is True
-    assert result["already_claimed"] is True
-    assert result["message"] == "今日没有新的赠分"
+    assert result["already_claimed"] is False
+    assert result["no_campaign"] is True
+    assert "尚未到账" in result["message"]
+    assert "不能代领" in result["message"]
 
 
 def test_claim_400_includes_upstream_message(isolated_db, monkeypatch):
@@ -460,9 +475,8 @@ def test_claim_400_includes_upstream_message(isolated_db, monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-        async def post(self, url, **kwargs):
-            assert "content" not in kwargs
-            assert kwargs.get("json") is None
+        async def get(self, url, **kwargs):
+            assert url.endswith("/api/v1/adapter/user/wallets")
             return FakeResponse()
 
     monkeypatch.setattr(checkin.httpx, "AsyncClient", FakeClient)

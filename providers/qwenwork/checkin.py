@@ -1,6 +1,13 @@
-"""QwenWork daily credit notice. The 1.3.1 client claims it with one POST."""
+"""QwenWork daily credit status.
+
+The 1.3.1 claim route is gone. Official docs say the daily bucket is issued at
+00:00 for a valid QwenWork login and expires the same day. This module only
+reads wallets and reports whether that bucket is present.
+"""
 
 from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -12,14 +19,17 @@ from providers.qwenwork.constants import (
     CLAIM_IDE_VERSION,
     CLAIM_RELEASE_VERSION,
     CLAIM_USER_AGENT,
-    DAILY_CREDIT_NOTICE_CLAIM_PATH,
     GATEWAY,
+    WALLETS_PATH,
 )
 from providers.qwenwork.token import QwenWorkAuthError, is_token_expired, refresh_account
 
+SHANGHAI = timezone(timedelta(hours=8))
+NOT_ISSUED_MESSAGE = "今日每日积分尚未到账。千问办公在 0 点按官方登录会话发放，网关不能代领。"
+
 
 def parse_daily_credit_notice(payload) -> dict:
-    """Match the desktop parser: unwrap adapter data, keep a positive integer credit."""
+    """Keep the old desktop parser for tests. Claim no longer uses this route."""
     data = payload if isinstance(payload, dict) else {}
     nested = data.get("data")
     if isinstance(nested, dict):
@@ -35,6 +45,64 @@ def parse_daily_credit_notice(payload) -> dict:
     return {"should_show": should_show, "credits": amount}
 
 
+def _next_shanghai_midnight(now: datetime | None = None) -> datetime:
+    current = now.astimezone(SHANGHAI) if now else datetime.now(SHANGHAI)
+    start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    return start + timedelta(days=1)
+
+
+def _parse_time(value) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = value.strip().replace("Z", "+00:00")
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=SHANGHAI)
+    return parsed
+
+
+def _positive_balance(value) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0.0
+    if value <= 0:
+        return 0.0
+    return float(value)
+
+
+def _wallet_rows(payload) -> list[dict]:
+    data = payload if isinstance(payload, dict) else {}
+    nested = data.get("data")
+    if isinstance(nested, dict):
+        data = nested
+        inner = data.get("data")
+        if isinstance(inner, dict):
+            data = inner
+    active = data.get("active_wallets") if isinstance(data, dict) else None
+    rows = active.get("wallets") if isinstance(active, dict) else None
+    if rows is None and isinstance(data, dict):
+        rows = data.get("wallets")
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if isinstance(row, dict)]
+
+
+def daily_credit_balance(payload, now: datetime | None = None) -> float:
+    """Sum wallets that expire at the next Shanghai midnight."""
+    midnight = _next_shanghai_midnight(now)
+    total = 0.0
+    for row in _wallet_rows(payload):
+        expiry = _parse_time(row.get("valid_to") or row.get("validTo"))
+        if expiry is None:
+            continue
+        if abs((expiry.astimezone(SHANGHAI) - midnight).total_seconds()) > 60:
+            continue
+        total += _positive_balance(row.get("balance"))
+    return total
+
+
 def _row(
     account: dict,
     *,
@@ -44,6 +112,7 @@ def _row(
     claimed: bool = False,
     already_claimed: bool = False,
     credit: float = 0,
+    no_campaign: bool = False,
 ) -> dict:
     return {
         "account_id": account.get("id"),
@@ -51,6 +120,7 @@ def _row(
         "ok": ok,
         "claimed": claimed,
         "already_claimed": already_claimed,
+        "no_campaign": no_campaign,
         "status_code": status_code,
         "message": message,
         "credit": credit,
@@ -80,13 +150,13 @@ def _cached_today(account: dict) -> dict | None:
     cached["claimed"] = False
     cached["already_claimed"] = True
     cached["today_checked_in"] = True
+    cached["no_campaign"] = False
     cached["stale"] = False
     cached["channel"] = CHANNEL_ID
     return cached
 
 
-def _claim_headers(access: str) -> dict[str, str]:
-    # Official 1.3.1 claim is a body-less POST. Content-Type plus {} is a 400.
+def _status_headers(access: str) -> dict[str, str]:
     headers = {
         "Accept": "application/json",
         "User-Agent": CLAIM_USER_AGENT,
@@ -112,18 +182,18 @@ def _error_detail(payload: dict, status: int) -> str:
         detail = detail or str(
             payload.get("errorMessage") or payload.get("errorCode") or payload.get("message") or ""
         )
-    text = f"QwenWork 赠分 HTTP {status}"
+    text = f"QwenWork 钱包 HTTP {status}"
     if detail and detail != "None":
         text += f" {detail}"
     return text[:240]
 
 
-async def _post_claim(account: dict) -> tuple[int, dict, str]:
-    headers = _claim_headers(str(account.get("access_token") or ""))
-    url = f"{GATEWAY}{DAILY_CREDIT_NOTICE_CLAIM_PATH}"
+async def _get_wallets(account: dict) -> tuple[int, dict, str]:
+    headers = _status_headers(str(account.get("access_token") or ""))
+    url = f"{GATEWAY}{WALLETS_PATH}"
     try:
         async with httpx.AsyncClient(timeout=20.0) as client:
-            response = await client.post(url, headers=headers)
+            response = await client.get(url, headers=headers)
     except httpx.HTTPError as exc:
         return 0, {}, str(exc)[:240]
     try:
@@ -133,59 +203,60 @@ async def _post_claim(account: dict) -> tuple[int, dict, str]:
     return response.status_code, payload if isinstance(payload, dict) else {}, ""
 
 
-def _from_notice(account: dict, status: int, payload: dict) -> dict:
-    parsed = parse_daily_credit_notice(payload)
-    if parsed["should_show"]:
-        return _row(
-            account,
-            ok=True,
-            status_code=status,
-            claimed=True,
-            credit=parsed["credits"],
-            message="领取成功",
-        )
-    if parsed["credits"] > 0:
+def _from_wallets(account: dict, status: int, payload: dict) -> dict:
+    credit = daily_credit_balance(payload)
+    if credit > 0:
         return _row(
             account,
             ok=True,
             status_code=status,
             already_claimed=True,
-            credit=parsed["credits"],
-            message="今日已领",
+            credit=credit,
+            message=f"今日每日积分已到账 {credit:g}",
         )
     return _row(
         account,
         ok=True,
         status_code=status,
-        already_claimed=True,
-        message="今日没有新的赠分",
+        no_campaign=True,
+        message=NOT_ISSUED_MESSAGE,
     )
 
 
-async def fetch_checkin(account: dict, force: bool = False) -> dict:
-    del force
-    cached = _cached_today(account)
-    if cached:
-        return cached
-    return _row(account, ok=True, message="尚未领取")
-
-
-async def claim_checkin(account: dict) -> dict:
+async def _read_daily_credit(account: dict) -> tuple[dict, dict]:
     current = account
     if is_token_expired(current) or not str(current.get("access_token") or ""):
         try:
             current = await refresh_account(current)
         except QwenWorkAuthError as exc:
-            return _row(account, ok=False, message=str(exc)[:240])
-    status, payload, error = await _post_claim(current)
+            return current, _row(account, ok=False, message=str(exc)[:240])
+    status, payload, error = await _get_wallets(current)
     if error or status in {401, 403}:
         try:
             current = await refresh_account(current)
-            status, payload, error = await _post_claim(current)
+            status, payload, error = await _get_wallets(current)
         except QwenWorkAuthError as exc:
-            return _row(account, ok=False, status_code=status, message=(error or str(exc))[:240])
+            return current, _row(account, ok=False, status_code=status, message=(error or str(exc))[:240])
     if error:
-        return _row(account, ok=False, message=error)
+        return current, _row(account, ok=False, message=error)
     if status >= 400:
-        return _row(account, ok=False, status_code=status, message=_error_detail(payload, status))
-    return _remember(current, _from_notice(current, status, payload))
+        return current, _row(account, ok=False, status_code=status, message=_error_detail(payload, status))
+    return current, _from_wallets(current, status, payload)
+
+
+async def fetch_checkin(account: dict, force: bool = False) -> dict:
+    if not force:
+        cached = _cached_today(account)
+        if cached:
+            return cached
+    current, result = await _read_daily_credit(account)
+    if result.get("already_claimed"):
+        return _remember(current, result)
+    return result
+
+
+async def claim_checkin(account: dict) -> dict:
+    current, result = await _read_daily_credit(account)
+    if result.get("already_claimed"):
+        return _remember(current, result)
+    return result
