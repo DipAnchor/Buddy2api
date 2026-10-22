@@ -102,10 +102,40 @@ python server.py
 
 提示符前面应出现 `(buddy2api)`，再执行 `python -m pip`，避免装到系统 Python。
 
+### Docker
+
+官方镜像只发到 GitHub Container Registry，不发 Docker Hub。地址是 `ghcr.io/wicm84266964/buddy2api`，目前只有 `linux/amd64`。正式版发版成功后会推送同名标签，例如 `ghcr.io/wicm84266964/buddy2api:v2.2.5`，并移动 `latest`。预发布不移动 `latest`。请固定版本标签，不要默认追踪 `latest`。
+
+第一次推送后，GitHub Packages 里的包可能是私有的。仓库所有者需要在包设置里把它改成公开，匿名 `docker pull` 才可用。这一步只做一次。
+
+不要把端口暴露到公网。Compose 继续只绑定 `127.0.0.1:8787`。Linux 镜像读不了 Windows DPAPI。千问办公、Loomy、小浣熊请先用本机 `python server.py` 导入，再把数据目录挂给容器。
+
+已克隆仓库、想用预构建镜像时：
+
+```powershell
+$env:CB_GATEWAY_ADMIN_TOKEN="cb-admin-请换成足够长的随机值"
+docker compose pull
+docker compose up -d
+```
+
+`docker-compose.yml` 钉住当前版本，并保留 `build: .`。想用仓库源码时，继续用下面的 Windows 脚本，或执行 `docker compose up -d --build`。
+
+不克隆源码时：
+
+```powershell
+docker pull ghcr.io/wicm84266964/buddy2api:v2.2.5
+docker run -d --name buddy2api --restart unless-stopped `
+  -p 127.0.0.1:8787:8787 `
+  -v buddy2api-data:/app/data `
+  -e CB_GATEWAY_ADMIN_TOKEN="cb-admin-请换成足够长的随机值" `
+  -e CB_DOCKER=1 `
+  ghcr.io/wicm84266964/buddy2api:v2.2.5
+```
+
 ### 其他启动方式
 
 - **脚本：** Windows 安装 Python 时勾选 Add Python to PATH，在项目目录执行 `.\start.bat`。Linux / macOS：`chmod +x start.sh && ./start.sh`。脚本优先用名为 `buddy2api` 的 Conda 环境，没有 Conda 才建 `.venv`。
-- **Docker：** `powershell -ExecutionPolicy Bypass -File .\start-docker-win.ps1`。本机没有 WorkBuddy 登录目录时脚本仍会启动。容器里通道都在，但千问办公、Loomy、小浣熊的本机登录文件请用上面的 `python server.py` 导入。导入后库里的 token 可以继续给 Docker 用。
+- **Docker：** 预构建镜像见上方「Docker」。`powershell -ExecutionPolicy Bypass -File .\start-docker-win.ps1` 仍在本机构建源码，不拉取 GHCR。本机没有 WorkBuddy 登录目录时脚本仍会启动。容器里通道都在，但千问办公、Loomy、小浣熊的本机登录文件请用上面的 `python server.py` 导入。导入后库里的 token 可以继续给 Docker 用。
 
 ### 第一次打开网页之后
 
@@ -128,7 +158,7 @@ python server.py
 
 ### 更新
 
-管理页打开后会在后台核对远端版本（优先走 jsDelivr，不挡页面）。有新版本时顶栏出现「更新到 vx.y.z」，点一下会 `git pull --ff-only`、安装依赖并重启。查不到远端版本时不会报错。Docker、不是 git 克隆、或不在 `main` 上时，按钮会说明原因，仍可用下面的手动步骤。本机已是最新、只想看按钮时：`$env:CB_GATEWAY_FAKE_LATEST="9.9.9"` 再启动，点下去不会真的拉取或重启。
+管理页打开后会在后台核对远端版本（优先走 jsDelivr，不挡页面）。有新版本时顶栏出现「更新到 vx.y.z」，点一下会 `git pull --ff-only`、安装依赖并重启。查不到远端版本时不会报错。Docker、不是 git 克隆、或不在 `main` 上时，按钮会说明原因，仍可用下面的手动步骤。Docker 安装请拉取 compose 钉住的版本后重启：`docker compose pull`，然后 `docker compose up -d`。本机已是最新、只想看按钮时：`$env:CB_GATEWAY_FAKE_LATEST="9.9.9"` 再启动，点下去不会真的拉取或重启。
 
 先 `Ctrl+C` 停掉正在跑的服务：
 
