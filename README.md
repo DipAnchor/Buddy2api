@@ -31,7 +31,7 @@ python server.py
 | Qoder 中国 | 开 | `%APPDATA%\com.qodercn.app.stable\auth.v1.dat` |
 | Qoder 国际 | 开 | `%APPDATA%\com.qoder.app.stable\auth.v1.dat` |
 | 千问办公 QwenWork | 开 | `%APPDATA%\QwenWorkCN` |
-| TraeWork | 开 | `%APPDATA%\TRAE SOLO CN\User\globalStorage` |
+| TraeWork | 开 | `%APPDATA%\TRAE SOLO CN\User\globalStorage`，新装 Trae 也扫 `%APPDATA%\Trae CN\User\globalStorage` |
 | 讯飞 Loomy | 开 | `%PUBLIC%\Loomy\*\userData\auth-session.json` |
 | 商汤小浣熊 | 开 | `%USERPROFILE%\.box-agent\config\auth.json` |
 
