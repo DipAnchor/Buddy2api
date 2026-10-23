@@ -39,7 +39,7 @@ jobs:
           if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]]; then
             echo "Version must look like v1.2.3 or v1.2.3-rc.1" >&2; exit 1
           fi
-          code_version="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' version.py)"
+          code_version="$(tr -d '\r' < version.py | sed -n 's/^VERSION = "\(.*\)"$/\1/p')"
           if [[ "$VERSION" != "v${code_version}" ]]; then
             echo "version.py is ${code_version}; release tag must be v${code_version}" >&2
             exit 1
