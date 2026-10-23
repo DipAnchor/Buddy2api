@@ -334,7 +334,7 @@ def test_one_click_keepalive_also_claims(isolated_db, monkeypatch):
             "skipped": False,
         }
 
-    async def fake_checkin(channel_filter=None):
+    async def fake_checkin(channel_filter=None, source="manual"):
         return {"total": 1, "claimed": 1, "already_claimed": 0, "failed": 0, "credit": 150, "results": [{"account_id": 1, "ok": True, "claimed": True}]}
 
     monkeypatch.setattr(control_plane, "refresh_one", fake_refresh)
@@ -377,7 +377,116 @@ def test_account_page_has_keepalive_and_login_controls():
     assert "浏览器登录" in text
     assert "/admin/accounts/keepalive-all" in text
     assert "/admin/workbuddy/login/start" in text
+    assert "自动化日志" in text
+    assert "/admin/automation-logs" in text
     assert "refreshLife" in text
     assert "keepalive_enabled" in text
     assert "auto_checkin_enabled" in text
     assert "默认关闭" in text
+
+
+def test_checkin_failure_is_kept_without_secrets(isolated_db, monkeypatch):
+    monkeypatch.setattr(control_plane, "checkin_gap_seconds", lambda: 0)
+    monkeypatch.setattr(control_plane.providers, "enabled_provider_ids", lambda: ["traework"])
+    monkeypatch.setattr(
+        control_plane.providers,
+        "get_provider",
+        lambda channel: type("Provider", (), {"checkin_supported": True})(),
+    )
+
+    async def accounts(channel, status="active"):
+        return [
+            {
+                "id": 4,
+                "nickname": "用户甲",
+                "provider": "traework",
+                "status": "active",
+                "access_token": "super-secret-token",
+            },
+            {
+                "id": 5,
+                "nickname": "用户乙",
+                "provider": "traework",
+                "status": "active",
+                "access_token": "another-secret-token",
+            },
+        ]
+
+    async def claim(account):
+        if account["id"] == 4:
+            raise RuntimeError("登录失败 Bearer super-secret-token")
+        return {
+            "ok": True,
+            "claimed": True,
+            "account_id": account["id"],
+            "account_name": account["nickname"],
+            "credit": 100,
+            "message": "领取成功",
+            "access_token": account["access_token"],
+        }
+
+    monkeypatch.setattr(control_plane, "_channel_accounts", accounts)
+    monkeypatch.setattr(control_plane, "claim_one", claim)
+    summary = asyncio.run(control_plane.checkin_all(source="schedule"))
+    assert summary["failed"] == 1
+    assert summary["claimed"] == 1
+
+    failed = db.list_automation_events(failures_only=True)
+    assert len(failed) == 1
+    assert failed[0]["source"] == "schedule"
+    assert failed[0]["job"] == "checkin"
+    assert failed[0]["channel"] == "traework"
+    assert failed[0]["account_name"] == "用户甲"
+    assert failed[0]["outcome"] == "failed"
+    assert failed[0]["status_code"] == 0
+    assert "super-secret-token" not in failed[0]["message"]
+    assert "Bearer [redacted]" in failed[0]["message"]
+
+    stored = json.dumps(db.list_automation_events(failures_only=False), ensure_ascii=False)
+    assert "super-secret-token" not in stored
+    assert "another-secret-token" not in stored
+    latest = db.latest_automation_runs()
+    assert latest[0]["job"] == "checkin"
+    assert latest[0]["source"] == "schedule"
+    assert latest[0]["failed"] == 1
+    assert latest[0]["total"] == 2
+
+
+def test_old_automation_events_are_pruned(isolated_db):
+    db.add_automation_events(
+        [
+            {
+                "created_at": int(time.time()) - 40 * 86400,
+                "source": "schedule",
+                "job": "checkin",
+                "run_id": "old",
+                "outcome": "failed",
+                "ok": False,
+                "message": "old failure",
+            }
+        ]
+    )
+    assert db.list_automation_events() == []
+
+
+def test_automation_logs_endpoint_returns_failures(isolated_db, monkeypatch):
+    monkeypatch.setattr(server, "_check_admin", lambda _authorization: None)
+    db.add_automation_events(
+        [
+            {
+                "source": "schedule",
+                "job": "checkin",
+                "run_id": "run",
+                "channel": "qwenwork",
+                "account_name": "书虫",
+                "outcome": "failed",
+                "ok": False,
+                "status_code": 401,
+                "message": "登录已失效",
+            }
+        ]
+    )
+    payload = asyncio.run(server.admin_automation_logs(limit=20, failures_only=1, authorization=None))
+    assert payload["items"][0]["message"] == "登录已失效"
+    assert payload["items"][0]["channel"] == "qwenwork"
+    assert payload["latest"][0]["failed"] == 1
