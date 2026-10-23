@@ -86,7 +86,7 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          code_version="$(sed -n 's/^VERSION = "\(.*\)"$/\1/p' version.py)"
+          code_version="$(tr -d '\r' < version.py | sed -n 's/^VERSION = "\(.*\)"$/\1/p')"
           if [[ "$VERSION" != "v${code_version}" ]]; then
             echo "version.py is ${code_version}; refusing to publish ${VERSION}" >&2
             exit 1
