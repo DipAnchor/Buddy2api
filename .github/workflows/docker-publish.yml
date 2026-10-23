@@ -99,9 +99,9 @@ jobs:
           set -euo pipefail
           sha="$(git rev-parse HEAD)"
           checks="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs?per_page=100")"
-          echo "$checks" | jq -r '.check_runs | sort_by(.name, .started_at) | group_by(.name)[] | last | select(.name != "create tagged release" and .name != "publish GHCR image" and .name != "publish container image") | [.name, .status, (.conclusion // "")] | @tsv'
-          count="$(echo "$checks" | jq '[.check_runs | sort_by(.name, .started_at) | group_by(.name)[] | last | select(.name != "create tagged release" and .name != "publish GHCR image" and .name != "publish container image")] | length')"
-          bad="$(echo "$checks" | jq '[.check_runs | sort_by(.name, .started_at) | group_by(.name)[] | last | select(.name != "create tagged release" and .name != "publish GHCR image" and .name != "publish container image") | select(.status != "completed" or .conclusion != "success")] | length')"
+          echo "$checks" | jq -r '.check_runs | sort_by(.name, .started_at) | group_by(.name)[] | last | select(((.name == "create tagged release" or (.name | test("publish GHCR image|publish container image"))) | not)) | [.name, .status, (.conclusion // "")] | @tsv'
+          count="$(echo "$checks" | jq '[.check_runs | sort_by(.name, .started_at) | group_by(.name)[] | last | select(((.name == "create tagged release" or (.name | test("publish GHCR image|publish container image"))) | not))] | length')"
+          bad="$(echo "$checks" | jq '[.check_runs | sort_by(.name, .started_at) | group_by(.name)[] | last | select(((.name == "create tagged release" or (.name | test("publish GHCR image|publish container image"))) | not)) | select(.status != "completed" or .conclusion != "success")] | length')"
           [[ "$count" -gt 0 && "$bad" -eq 0 ]] || { echo "All CI checks on the tagged commit must pass before publishing an image." >&2; exit 1; }
 
       - name: Resolve image tags
