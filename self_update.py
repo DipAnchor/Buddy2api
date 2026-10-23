@@ -17,6 +17,7 @@ from version import VERSION
 
 ROOT = Path(__file__).resolve().parent
 DEFAULT_REPO = "wicm84266964/Buddy2api"
+GHCR_IMAGE = "ghcr.io/wicm84266964/buddy2api"
 CACHE_OK_TTL = 600.0
 CACHE_FAIL_TTL = 60.0
 VERSION_RE = re.compile(r'^VERSION\s*=\s*["\']([^"\']+)["\']', re.M)
@@ -101,9 +102,10 @@ def install_kind() -> str:
     return "files"
 
 
-def install_hint(kind: str) -> str:
+def install_hint(kind: str, latest: str | None = None) -> str:
     if kind == "docker":
-        return "Docker 部署请在宿主机重新构建镜像后重启"
+        tag = f"v{latest}" if latest else "对应版本"
+        return f"Docker 部署请在宿主机拉取 {GHCR_IMAGE}:{tag} 后重启"
     if kind == "files":
         return "当前不是 git 克隆，请按 README 手动更新"
     return ""
@@ -158,7 +160,7 @@ async def _check_now() -> dict:
         "install": kind,
         "checked": checked,
         "source": source,
-        "message": install_hint(kind) if update_available and kind != "git" else "",
+        "message": install_hint(kind, latest) if update_available and kind != "git" else "",
     }
 
 

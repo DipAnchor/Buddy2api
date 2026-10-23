@@ -94,7 +94,7 @@ def test_docker_install_cannot_apply(monkeypatch):
     payload = asyncio.run(self_update.check(force=True))
     assert payload["update_available"] is True
     assert payload["can_apply"] is False
-    assert "Docker" in payload["message"]
+    assert payload["message"] == "Docker 部署请在宿主机拉取 ghcr.io/wicm84266964/buddy2api:v9.9.9 后重启"
 
 
 def test_apply_pulls_installs_and_asks_restart(monkeypatch, tmp_path):
