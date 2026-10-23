@@ -10,6 +10,7 @@ database.py — SQLite 数据层
 
 import hashlib
 import json
+import re
 import sqlite3
 import threading
 import time
@@ -1219,8 +1220,32 @@ def _prune_automation_events(conn: sqlite3.Connection) -> None:
     )
 
 
+def public_automation_text(value, limit: int = 240) -> str:
+    """Return a log-safe message. Never keep header values or opaque credentials."""
+    text = " ".join(str(value or "").split())
+    text = re.sub(
+        r"(?i)\b(?:authorization\s*[:=]\s*)?(?:bearer|cloud-ide-jwt)\s+\S+",
+        "[redacted]",
+        text,
+    )
+    text = re.sub(r"(?i)\b(?:authorization|cookie)\s*[:=]\s*\S+", "[redacted]", text)
+    text = re.sub(
+        r"(?i)((?:access_token|refresh_token|password|session_state)[\"']?\s*[:=]\s*[\"']?)\S+",
+        r"\1[redacted]",
+        text,
+    )
+    text = re.sub(
+        r"(?i)([?&](?:access_token|refresh_token|token|code)=)[^&\s]+",
+        r"\1[redacted]",
+        text,
+    )
+    text = re.sub(r"\beyJ[A-Za-z0-9_\-]{8,}(?:\.[A-Za-z0-9_\-]+){1,}", "[redacted]", text)
+    text = re.sub(r"\b[A-Za-z0-9_\-]{32,}\b", "[redacted]", text)
+    return text[:limit]
+
+
 def add_automation_events(events: list[dict]) -> None:
-    """Store public automation results. Callers must not pass credentials."""
+    """Store public automation results. Credential-shaped text is redacted again."""
     if not events:
         return
     now = int(time.time())
@@ -1243,12 +1268,12 @@ def add_automation_events(events: list[dict]) -> None:
                 str(event.get("job") or "")[:32],
                 str(event.get("run_id") or "")[:32],
                 account_id,
-                str(event.get("account_name") or "")[:80],
-                str(event.get("channel") or "")[:32],
+                public_automation_text(event.get("account_name") or "", 80),
+                public_automation_text(event.get("channel") or "", 32),
                 str(event.get("outcome") or "failed")[:32],
                 1 if event.get("ok") else 0,
                 status_code,
-                " ".join(str(event.get("message") or "").split())[:240],
+                public_automation_text(event.get("message") or ""),
             )
         )
     with _lock:

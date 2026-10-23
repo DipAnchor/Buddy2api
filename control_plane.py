@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import os
-import re
 import secrets
 import sys
 import time
@@ -630,14 +629,7 @@ async def checkin_status_all(force: bool = False) -> dict:
 
 
 def _public_text(value, limit: int = 240) -> str:
-    text = " ".join(str(value or "").split())
-    text = re.sub(r"(?i)bearer\s+\S+", "Bearer [redacted]", text)
-    text = re.sub(
-        r"(?i)((?:access_token|refresh_token|authorization|cookie|password)[\"']?\s*[:=]\s*[\"']?)[^\s,;\"']{6,}",
-        r"\1[redacted]",
-        text,
-    )
-    return text[:limit]
+    return db.public_automation_text(value, limit)
 
 
 def _event_parts(row: dict) -> tuple[int | None, str, str, int | None]:
@@ -892,7 +884,24 @@ async def keepalive_all(
                 if not first and gap:
                     await asyncio.sleep(gap)
                 first = False
-                result = await refresh_one(account, allow_inactive=False)
+                try:
+                    result = await refresh_one(account, allow_inactive=False)
+                except Exception as exc:
+                    result = {
+                        "ok": False,
+                        "account_id": account.get("id"),
+                        "account_name": _account_label(account),
+                        "provider": channel,
+                        "status_code": 0,
+                        "message": _public_text(exc) or type(exc).__name__,
+                    }
+                if not isinstance(result, dict):
+                    result = {
+                        "ok": False,
+                        "account_id": account.get("id"),
+                        "account_name": _account_label(account),
+                        "message": "续期结果无效",
+                    }
                 result["channel"] = channel
                 result["status_text"] = "ok" if result.get("ok") else "failed"
                 results.append(result)
