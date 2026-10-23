@@ -31,7 +31,7 @@ python server.py
 | Qoder CN | on | `%APPDATA%\com.qodercn.app.stable\auth.v1.dat` |
 | Qoder international | on | `%APPDATA%\com.qoder.app.stable\auth.v1.dat` |
 | QwenWork | on | `%APPDATA%\QwenWorkCN` |
-| TraeWork | on | `%APPDATA%\TRAE SOLO CN\User\globalStorage` |
+| TraeWork | on | `%APPDATA%\TRAE SOLO CN\User\globalStorage`; newer Trae CN also uses `%APPDATA%\Trae CN\User\globalStorage` |
 | iFlytek Loomy | on | `%PUBLIC%\Loomy\*\userData\auth-session.json` |
 | SenseTime Xiaohuanxiong | on | `%USERPROFILE%\.box-agent\config\auth.json` |
 
