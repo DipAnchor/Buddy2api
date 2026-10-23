@@ -101,6 +101,7 @@ async def chat_completions(payload: dict, api_key_info: dict | None) -> tuple:
         except (httpx.HTTPError, XiaohuanxiongAuthError) as exc:
             auth_manager.mark_account_failure(account["id"], 503)
             last_error = ("error", (503, {"error": {"message": str(exc)[:240], "type": "server_error"}}))
+            _log(api_key_info, account, model_name, False, 0, 0, 0, "error", 503, str(exc)[:400], t0)
             continue
         if response.status_code < 400:
             auth_manager.mark_account_success(account["id"])
@@ -126,6 +127,12 @@ async def chat_completions(payload: dict, api_key_info: dict | None) -> tuple:
                 pass
         auth_manager.mark_account_failure(account["id"], status)
         last_error = ("error", (status, _detail(response)))
+        _log(
+            api_key_info, account, model_name, False, 0, 0, 0,
+            "retry" if status in RETRYABLE_STATUS else "error",
+            status, str(last_error[1])[:400], t0,
+            increment_usage=not (status in RETRYABLE_STATUS and attempt < 2),
+        )
         if status not in RETRYABLE_STATUS:
             return last_error
     return last_error or (
@@ -167,7 +174,9 @@ async def _stream(raw: str, api_key_info, model_name: str) -> AsyncGenerator[byt
                         last_error = f"data: {json.dumps({'error': {'message': text}}, ensure_ascii=False)}\n\n".encode()
                         if response.status_code not in RETRYABLE_STATUS:
                             yield last_error
+                            _log(api_key_info, account, model_name, True, 0, 0, 0, "error", response.status_code, text, t0)
                             return
+                        _log(api_key_info, account, model_name, True, 0, 0, 0, "retry", response.status_code, text, t0)
                         continue
                     auth_manager.mark_account_success(account["id"])
                     async for line in response.aiter_lines():
@@ -183,6 +192,7 @@ async def _stream(raw: str, api_key_info, model_name: str) -> AsyncGenerator[byt
             auth_manager.mark_account_failure(account["id"], 503)
             last_error = f"data: {json.dumps({'error': {'message': str(exc)[:240]}}, ensure_ascii=False)}\n\n".encode()
     yield last_error
+    _log(api_key_info, None, model_name, True, 0, 0, 0, "error", 503, "stream failed", time.time())
 
 
 async def test_chat(account: dict, model: str = "auto", prompt: str = "ping") -> dict:
