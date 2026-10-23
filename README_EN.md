@@ -4,7 +4,7 @@
 
 > Local consumer AI clients → one OpenAI-compatible API for Codex, OpenCode, Cherry Studio, NextChat, and similar agents. Work Buddy / CodeBuddy, Qoder, QwenWork, TraeWork, iFlytek Loomy, and SenseTime Xiaohuanxiong are on by default; pick one in the UI dropdown. Each request stays on one channel. QClaw is retired; its credits moved to WorkBuddy.
 
-Release **2.2.5**. Default channels include WorkBuddy domestic and international, Qoder CN and international, QwenWork, TraeWork, Loomy, and Xiaohuanxiong. Channels without a stored login are omitted from the model list. Local use only, and only with accounts you personally own. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
+Release **2.2.6**. Default channels include WorkBuddy domestic and international, Qoder CN and international, QwenWork, TraeWork, Loomy, and Xiaohuanxiong. Channels without a stored login are omitted from the model list. Local use only, and only with accounts you personally own. Do not expose this on the public internet, and do not share credentials, API keys, or the database.
 
 **Your own accounts only. Do not use SMS-code platforms, bulk registration, or any batch method to farm credits.** Do not expose the gateway to other people, claim rewards for them, or resell quota.
 
@@ -31,7 +31,7 @@ python server.py
 | Qoder CN | on | `%APPDATA%\com.qodercn.app.stable\auth.v1.dat` |
 | Qoder international | on | `%APPDATA%\com.qoder.app.stable\auth.v1.dat` |
 | QwenWork | on | `%APPDATA%\QwenWorkCN` |
-| TraeWork | on | `%APPDATA%\TRAE SOLO CN\User\globalStorage` |
+| TraeWork | on | `%APPDATA%\TRAE SOLO CN\User\globalStorage`; newer Trae CN also uses `%APPDATA%\Trae CN\User\globalStorage` |
 | iFlytek Loomy | on | `%PUBLIC%\Loomy\*\userData\auth-session.json` |
 | SenseTime Xiaohuanxiong | on | `%USERPROFILE%\.box-agent\config\auth.json` |
 
@@ -64,9 +64,39 @@ python server.py
 
 3. Open http://127.0.0.1:8787 → Accounts → Detect → Import → Test → API Keys (select a channel; pick Codex if the client is Codex) → point your client at `http://127.0.0.1:8787/v1`.
 
-Windows script: `.\start.bat`. Docker helper: `.\start-docker-win.ps1` (WorkBuddy mount; use native Python for QwenWork).
+Windows script: `.\start.bat`. Docker helper: `.\start-docker-win.ps1` (WorkBuddy mount; use native Python for QwenWork). That helper builds from the local checkout. The prebuilt image is `ghcr.io/wicm84266964/buddy2api:v2.2.6` (`linux/amd64` only).
 
 Later starts: `conda activate buddy2api` then `python server.py` in the project directory.
+
+## Docker
+
+The official image is published only to GHCR, not Docker Hub: `ghcr.io/wicm84266964/buddy2api:v2.2.6`. A stable release also moves `latest`; prereleases do not. Pin the version tag. The image is `linux/amd64` only.
+
+The first push can create a private GitHub Packages container. The repository owner must change that package to public once before anonymous `docker pull` works.
+
+Do not publish port 8787 on the public internet. Compose keeps the bind at `127.0.0.1:8787`. A Linux image cannot decrypt Windows DPAPI files. Import QwenWork, Loomy, and Xiaohuanxiong with local `python server.py`, then mount the data directory into the container.
+
+From a checkout:
+
+```powershell
+$env:CB_GATEWAY_ADMIN_TOKEN="cb-admin-replace-with-a-long-random-value"
+docker compose pull
+docker compose up -d
+```
+
+`docker-compose.yml` pins the current tag and still has `build: .`. Use `docker compose up -d --build` or `.\start-docker-win.ps1` to build from source.
+
+Without cloning:
+
+```powershell
+docker pull ghcr.io/wicm84266964/buddy2api:v2.2.6
+docker run -d --name buddy2api --restart unless-stopped `
+  -p 127.0.0.1:8787:8787 `
+  -v buddy2api-data:/app/data `
+  -e CB_GATEWAY_ADMIN_TOKEN="cb-admin-replace-with-a-long-random-value" `
+  -e CB_DOCKER=1 `
+  ghcr.io/wicm84266964/buddy2api:v2.2.6
+```
 
 ## FAQ
 
@@ -80,7 +110,7 @@ Later starts: `conda activate buddy2api` then `python server.py` in the project 
 
 ## Update
 
-The management page checks for a newer `main` in the background (jsDelivr first). A top-bar **Update to vx.y.z** button runs `git pull --ff-only`, reinstalls requirements, and restarts. A failed check stays silent. Docker images, zip copies, and non-`main` checkouts keep using a manual pull. To preview the button on an already-current install, start with `CB_GATEWAY_FAKE_LATEST=9.9.9`; the click does not pull or restart.
+The management page checks for a newer `main` in the background (jsDelivr first). A top-bar **Update to vx.y.z** button runs `git pull --ff-only`, reinstalls requirements, and restarts. A failed check stays silent. Docker images, zip copies, and non-`main` checkouts keep using a manual update. For Docker, pull the tag pinned in compose and restart: `docker compose pull` then `docker compose up -d`. To preview the button on an already-current install, start with `CB_GATEWAY_FAKE_LATEST=9.9.9`; the click does not pull or restart.
 
 ## Upgrade from 1.4.x
 
