@@ -170,12 +170,25 @@ async def _stream(raw: str, api_key_info, model_name: str) -> AsyncGenerator[byt
                             return
                         continue
                     auth_manager.mark_account_success(account["id"])
+                    usage: dict = {}
                     async for line in response.aiter_lines():
                         if line == "":
                             continue
+                        if line.startswith("data:"):
+                            data = line[5:].strip()
+                            if data and data != "[DONE]":
+                                try:
+                                    chunk = json.loads(data)
+                                    if isinstance(chunk, dict) and isinstance(chunk.get("usage"), dict):
+                                        usage = chunk["usage"]
+                                except json.JSONDecodeError:
+                                    pass
                         started = True
                         yield (line + "\n\n").encode("utf-8")
-            _log(api_key_info, account, model_name, True, 0, 0, 0, "stop", 200, "", t0)
+            prompt_t = int(usage.get("prompt_tokens") or 0)
+            completion_t = int(usage.get("completion_tokens") or 0)
+            total_t = int(usage.get("total_tokens") or (prompt_t + completion_t))
+            _log(api_key_info, account, model_name, True, prompt_t, completion_t, total_t, "stop", 200, "", t0)
             return
         except (httpx.HTTPError, XiaohuanxiongAuthError) as exc:
             if started:
